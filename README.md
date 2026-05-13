@@ -85,6 +85,7 @@ git clone https://github.com/MLGalusha/second-braincell.git
 cd second-braincell
 npm install
 npm run connect
+npm run install-skill
 ```
 
 `npm run connect` is interactive and clipboard-based. It walks you through:
@@ -130,7 +131,15 @@ Read and follow skills/chatgpt-direct-api/SKILL.md.
 Ask ChatGPT: Reply with exactly: agent works
 ```
 
-If your agent supports installing repo skills, install the skill from `skills/chatgpt-direct-api/SKILL.md`. Otherwise, telling the agent to read that file is enough.
+For use from any local repository, install the global Codex skill:
+
+```bash
+npm run install-skill
+```
+
+This copies `skills/chatgpt-direct-api/` to `${CODEX_HOME:-~/.codex}/skills/chatgpt-direct-api` and writes a local `RUNNER_ROOT.txt` there so the skill can call this runner from other project folders with `npm --prefix`. Restart Codex or start a new Codex thread after installing so the skill metadata is reloaded. The skill includes trigger metadata, so future requests like “ask ChatGPT with Second Braincell” can load it without you pointing the agent at this repo file.
+
+If your agent does not support global skills, telling it to read `skills/chatgpt-direct-api/SKILL.md` still works.
 
 ## Agent Prompting
 
@@ -362,7 +371,7 @@ List local Second Braincell jobs:
 npm run chatgpt -- jobs
 ```
 
-Text chat is synchronous by default. Image generation and Deep Research are async by default: they submit quickly, create a job under `output/jobs/`, start a watcher, and print the status command plus watcher status path. Agents should treat these async jobs as fire-and-forget: submit the job, create a thread heartbeat automation when available, report the job id/status path if useful, then stop or continue with other work. Creating the heartbeat is required in Codex sessions with automation support. Image jobs use a 30-second heartbeat; Deep Research jobs use a 10-minute heartbeat. Use `--sync` for image or Deep Research only when you want the initial command to wait, and only poll manually when progress or retrieval is explicitly requested.
+Text chat is synchronous by default. Image generation and Deep Research are async by default: they submit quickly, create a job under `output/jobs/`, start a watcher, and print the status command plus watcher status path. Agents should treat these async jobs as fire-and-forget: submit the job, create a thread heartbeat automation when available, report the job id/status path if useful, then stop or continue with other work. Creating the heartbeat is required in Codex sessions with automation support. Image jobs use a 1-minute heartbeat; Deep Research jobs use a 10-minute heartbeat. Use `--sync` for image or Deep Research only when you want the initial command to wait, and only poll manually when progress or retrieval is explicitly requested.
 
 ## Privacy
 

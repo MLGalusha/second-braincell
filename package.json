@@ -18,6 +18,7 @@
     "chatgpt": "node src/cli.js",
     "connect": "node src/cli.js connect",
     "setup": "node src/cli.js setup",
+    "install-skill": "node scripts/install-skill.js",
     "ask": "node src/cli.js ask",
     "converse": "node src/cli.js converse",
     "chats": "node src/cli.js chats",

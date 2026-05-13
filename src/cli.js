@@ -31,6 +31,20 @@ import { loadLocalHeaders, readCurlInputFile, writeLocalSetup } from "./local-co
 
 const __filename = fileURLToPath(import.meta.url);
 const SETUP_FILTER = "conversation";
+const ASYNC_HEARTBEAT_AUTOMATION = {
+  image: {
+    label: "1-minute",
+    intervalSeconds: 60,
+    rrule: "FREQ=MINUTELY;INTERVAL=1",
+    name: "Check ChatGPT image job",
+  },
+  "deep-research": {
+    label: "10-minute",
+    intervalSeconds: 600,
+    rrule: "FREQ=MINUTELY;INTERVAL=10",
+    name: "Check ChatGPT Deep Research job",
+  },
+};
 
 function color(code, value) {
   if (!process.stdout.isTTY || process.env.NO_COLOR) return value;
@@ -123,7 +137,7 @@ function featureLine(label, ready) {
 function formatHumanCapabilities(data) {
   const lines = [];
   const setup = data.setup;
-  const projectName = setup.config.projectUrl ? setup.config.projectUrl.split("/").filter(Boolean).at(-2) || "configured project" : null;
+  const projectName = setup.config.projectId || "configured project";
 
   lines.push(color("1;36", "Second Braincell"));
   lines.push("");
@@ -561,6 +575,7 @@ async function runDirectApiMessage(argv, { silent = false } = {}) {
       });
     }
 
+    const heartbeatAutomation = isAsync ? heartbeatAutomationForAsyncJob(job.id, kind) : undefined;
     const payload = {
       id: job.id,
       jobStatus: loadJob(job.id).status,
@@ -575,19 +590,9 @@ async function runDirectApiMessage(argv, { silent = false } = {}) {
       statusCommand: `npm run chatgpt -- status ${job.id}`,
       watchStatusPath: resolve(JOBS_DIR, job.id, "watch-status.json"),
       agentInstruction: isAsync
-        ? `Async ${kind} job submitted and background watcher started. Create a thread heartbeat automation with a ${kind === "image" ? "30-second" : "10-minute"} interval to report completion when available, then do not poll or wait unless explicitly asked.`
+        ? `Async ${kind} job submitted and background watcher started. Create a thread heartbeat automation with a ${ASYNC_HEARTBEAT_AUTOMATION[kind]?.label || "10-minute"} interval to report completion when available, then do not poll or wait unless explicitly asked.`
         : undefined,
-      heartbeatAutomation: isAsync
-        ? {
-            requiredWhenAvailable: true,
-            kind: "heartbeat",
-            destination: "thread",
-            intervalSeconds: kind === "image" ? 30 : 600,
-            rrule: kind === "image" ? "FREQ=SECONDLY;INTERVAL=30" : "FREQ=MINUTELY;INTERVAL=10",
-            name: kind === "image" ? "Check ChatGPT image job" : "Check ChatGPT Deep Research job",
-            prompt: `In ${ROOT_DIR}, check Second Braincell job ${job.id} with npm run status -- ${job.id}. If it is complete, report the artifact path and render the image/report when possible. If it is still waiting, check again later without extra commentary.`,
-          }
-        : undefined,
+      heartbeatAutomation,
     };
     if (!silent) console.log(JSON.stringify(payload, null, 2));
     return payload;
@@ -615,6 +620,19 @@ function withoutFlags(argv, names) {
     if (i + 1 < argv.length && !String(argv[i + 1]).startsWith("--")) i += 1;
   }
   return next;
+}
+
+export function heartbeatAutomationForAsyncJob(jobId, kind) {
+  const schedule = ASYNC_HEARTBEAT_AUTOMATION[kind] || ASYNC_HEARTBEAT_AUTOMATION["deep-research"];
+  return {
+    requiredWhenAvailable: true,
+    kind: "heartbeat",
+    destination: "thread",
+    intervalSeconds: schedule.intervalSeconds,
+    rrule: schedule.rrule,
+    name: schedule.name,
+    prompt: `In ${ROOT_DIR}, check Second Braincell job ${jobId} with npm run status -- ${jobId}. If it is complete, report the artifact path and render the image/report when possible. If it is still waiting, check again later without extra commentary.`,
+  };
 }
 
 function ensureFlag(argv, name, value = null) {
@@ -1236,6 +1254,16 @@ function firstPositionalIndex(argv) {
     "--project",
     "--search",
     "--query",
+    "--set",
+    "--set-file",
+    "--watch-interval-seconds",
+    "--watch-timeout-seconds",
+    "--max-messages",
+    "--max-chars",
+    "--job-kind",
+    "--output-kind",
+    "--model-preset",
+    "--model-selection",
   ]);
   for (let i = 0; i < argv.length; i += 1) {
     if (valueFlags.has(argv[i])) {

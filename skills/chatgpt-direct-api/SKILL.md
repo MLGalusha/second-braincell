@@ -1,6 +1,13 @@
+---
+name: chatgpt-direct-api
+description: Use when Codex should ask ChatGPT through the local Second Braincell runner, use a ChatGPT Project conversation, search or resume ChatGPT chats, upload files/PDFs to ChatGPT, generate images, run Deep Research, or inspect/update ChatGPT Project instructions from any repository.
+metadata:
+  short-description: Use Second Braincell to talk to ChatGPT
+---
+
 # Second Braincell
 
-Use this skill when working in this repository to send prompts, files, images, or Deep Research tasks through Second Braincell.
+Use this skill from any local repository to send prompts, files, images, or Deep Research tasks through Second Braincell.
 
 ## Rules
 
@@ -8,6 +15,22 @@ Use this skill when working in this repository to send prompts, files, images, o
 - Keep `.local/` private. It contains auth headers and must not be printed, committed, copied into docs, or included in outputs.
 - Keep generated artifacts in ignored `output/`.
 - Do not print cookies, auth headers, proof tokens, signed upload URLs, HARs, cURLs, file ids, or account identifiers.
+
+## Runner Root
+
+Before running commands, resolve the Second Braincell repo root:
+
+1. If the current working directory's `package.json` has `"name": "second-braincell"`, use the current directory.
+2. Else if `SECOND_BRAINCELL_HOME` is set, use that path.
+3. Else if this installed skill directory contains `RUNNER_ROOT.txt`, read the repo root from that file.
+4. Else ask the user to run `npm run install-skill` from the cloned Second Braincell repo.
+
+When the runner root differs from the current project, run commands with `npm --prefix "$SBC_ROOT" run <script> -- ...`. For example:
+
+```bash
+npm --prefix "$SBC_ROOT" run capabilities
+npm --prefix "$SBC_ROOT" run converse -- --prompt "..."
+```
 
 ## Connect
 
@@ -181,7 +204,7 @@ npm run status -- <job-id>
 
 Normal text chat is synchronous by default. Image generation and Deep Research are async by default.
 
-Default agent behavior for image generation and Deep Research is fire-and-forget: run the submit command, create a thread heartbeat automation when available, confirm the job was submitted, then end the response or move to the user's next task. Creating the heartbeat is required in Codex sessions with automation support. Use a 30-second heartbeat for image jobs and a 10-minute heartbeat for Deep Research jobs. Do not use the Deep Research 10-minute heartbeat schedule for image jobs. The submit command starts the background watcher.
+Default agent behavior for image generation and Deep Research is fire-and-forget: run the submit command, create a thread heartbeat automation when available, confirm the job was submitted, then end the response or move to the user's next task. Creating the heartbeat is required in Codex sessions with automation support. Use a 1-minute heartbeat for image jobs and a 10-minute heartbeat for Deep Research jobs. Do not use the Deep Research 10-minute heartbeat schedule for image jobs. The submit command starts the background watcher.
 
 Do not run `status`, `watch-api-job`, sleep loops, polling loops, or wait for the artifact unless the user explicitly asks to wait, check progress, retrieve the result, debug the watcher, or use `--sync`.
 

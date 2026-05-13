@@ -1,69 +1,49 @@
 # ChatGPT Project Runner
 
-Local Node.js runner for sending work to a ChatGPT Project from an already-authenticated browser session. It uses browser-observed ChatGPT web API endpoints directly and does not use Playwright or Chrome UI automation.
+Give your Codex agent a direct path into your own ChatGPT Project.
 
-Setup needs two things:
+This runner lets Codex ask ChatGPT for work that ChatGPT is especially good at:
+
+- Deep Research reports
+- image generation
+- file and PDF question-answering with ChatGPT's stronger upload/RAG system
+- normal ChatGPT model responses from a Project you control
+
+This is useful because Codex can call this local runner instead of trying to recreate those workflows itself. For large PDFs and file-heavy questions, ChatGPT's uploaded-file retrieval is often a better fit than iterative search from Codex. ChatGPT image generation and Deep Research also run through your ChatGPT account, not your Codex rate limit.
+
+The runner uses browser-observed ChatGPT web API endpoints from your already-authenticated browser session. It does not use Playwright or Chrome UI automation.
+
+## What Setup Does
+
+Setup needs:
 
 - one ChatGPT Project URL
 - one authenticated `chatgpt.com` cURL copied from DevTools
 
-The cURL supplies auth headers only. Request bodies for messages, images, Deep Research, and file attachments are built by source code in this repo.
-
-## Setup
-
-Run setup:
-
-```bash
-npm run setup
-```
-
-The interactive setup is clipboard-based. Copy each item, then press Enter in the terminal. No need to paste. Anything typed or pasted at the setup prompts is ignored.
-
-### Step 1: Create The ChatGPT Project
-
-1. Open ChatGPT in your browser.
-2. Start creating a new Project.
-3. Name the Project `Codex`.
-4. Before creating it, click the settings button.
-5. Set Project memory to project-only. This cannot be changed after the Project is created.
-6. Create and open the `Codex` Project.
-
-### Step 2: Copy The Project URL
-
-1. Click the browser address bar while the `Codex` Project is open.
-2. Copy the URL.
-3. Go back to the terminal.
-4. Press Enter when setup asks for the Project URL.
-
-No need to paste the URL. The setup command reads it from your clipboard after you press Enter.
-
-### Step 3: Copy One Authenticated cURL
-
-1. Keep the same `Codex` Project open in ChatGPT.
-2. Right-click the ChatGPT page and click Inspect.
-3. In DevTools, click the Network tab.
-4. Click the clear network log button in the top-left of Network: ⊘
-5. Click the Network filter box directly below that clear button.
-6. Paste this filter into that box: `/backend-api/f/conversation`
-7. While the Network tab is open, go back to your ChatGPT Project and send a message.
-8. A request named `conversation` should appear in the Network table. Its icon is an orange square with `<>` inside it.
-9. Right-click the `conversation` request.
-10. Choose Copy > Copy as cURL.
-11. Go back to the terminal.
-12. Press Enter when setup asks for the authenticated cURL.
-
-No need to paste the cURL. DevTools cURLs are often multiline, so the setup command reads the copied cURL from your clipboard after you press Enter.
+The cURL supplies auth headers only. Source code in this repo builds the request bodies for messages, images, Deep Research, and file attachments.
 
 Setup writes ignored local files:
 
 - `.local/config.json`: project URL and local runner config
 - `.local/auth.json`: auth headers extracted from the copied cURL
 
-For non-interactive setup or systems without `pbpaste`, save the cURL to a local ignored file and pass it explicitly:
+## Quick Start
 
 ```bash
-npm run setup -- --project-url "https://chatgpt.com/g/g-p-.../project" --curl-file ./request.curl
+git clone https://github.com/MLGalusha/chatgpt-project-runner.git
+cd chatgpt-project-runner
+npm install
+npm run setup
 ```
+
+`npm run setup` is interactive and clipboard-based. It walks you through:
+
+- creating a ChatGPT Project named `Codex`
+- setting Project memory to project-only before the Project is created
+- copying the Project URL
+- copying one authenticated `/backend-api/f/conversation` cURL from DevTools
+
+No need to paste copied values into the terminal. Setup reads from your clipboard after you press Enter, and anything typed or pasted at the setup prompts is ignored.
 
 Check readiness:
 
@@ -71,9 +51,9 @@ Check readiness:
 npm run capabilities
 ```
 
-### Use It From Your Agent
+## Use It From Codex
 
-After setup is complete, go to your agent in this cloned repo and tell it:
+After setup is complete, go to your Codex agent and tell it:
 
 ```text
 Read and follow skills/chatgpt-direct-api/SKILL.md.
@@ -84,16 +64,38 @@ If your agent supports installing repo skills, install the skill from `skills/ch
 
 ## Commands
 
+Text:
+
 ```bash
 npm run ask -- --prompt "Explain this in one paragraph."
+```
+
+File or PDF question:
+
+```bash
 npm run ask -- --attach-file ./document.pdf --prompt "Answer a question about this file."
+```
+
+Image generation:
+
+```bash
 npm run ask -- --kind image --quality high --prompt "A red cube on a white table."
 npm run ask -- --kind image --quality instant --prompt "A red cube on a white table."
+```
+
+Deep Research:
+
+```bash
 npm run ask -- --kind deep-research --prompt "Research this topic and produce a concise report."
+```
+
+Refresh a job:
+
+```bash
 npm run status -- <job-id>
 ```
 
-`ask` is async by default. It submits quickly, creates a job under `output/jobs/`, starts a watcher, and prints the status command plus watcher status path. Use `--sync` only when you want the initial command to wait.
+`ask` is async by default. It submits quickly, creates a job under `output/jobs/`, starts a watcher, and prints the status command plus watcher status path. Use `--sync` when you want the initial command to wait.
 
 ## Output
 
@@ -116,26 +118,6 @@ npm run ask -- --model gpt-5.5-pro --reasoning extended --prompt "..."
 ```
 
 Invalid model and reasoning combinations fail before sending.
-
-## Files
-
-Attach files with `--attach-file`:
-
-```bash
-npm run ask -- --attach-file ./spec.pdf --prompt "Summarize the requirements."
-npm run ask -- --attach-file ./a.pdf --attach-file ./b.xlsx --prompt "Compare these files."
-```
-
-The runner creates the upload, PUTs bytes to the signed upload URL, processes the file, and attaches the resulting file id to the message. Signed URLs and file ids are not printed in normal output.
-
-## Debugging
-
-Normal usage does not require `/tmp/chatgpt-send*.curl`. The `--curl` flag and analyzer scripts remain for endpoint debugging only:
-
-```bash
-npm run analyze-send-curl -- /path/to/request.curl
-npm run analyze-har -- /path/to/chatgpt.com.har
-```
 
 ## Privacy
 

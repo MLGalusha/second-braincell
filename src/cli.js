@@ -157,7 +157,7 @@ async function runSetup(argv) {
   console.log(`  Auth: ${summary.authPath}`);
   console.log("");
   console.log(color("1", "Next:"));
-  console.log("  1. Go to your agent in this cloned repo.");
+  console.log("  1. Go to your Codex agent.");
   console.log("  2. Tell it: Read and follow `skills/chatgpt-direct-api/SKILL.md`.");
   console.log('  3. Test it: Use the ChatGPT direct API runner to ask "Reply with exactly: agent works".');
   console.log("");

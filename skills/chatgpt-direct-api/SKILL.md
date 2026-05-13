@@ -45,6 +45,27 @@ Use the most recent returned job id for each follow-up. The runner reuses the st
 
 When asked to "chat back and forth with ChatGPT", "have a conversation", "send a follow-up", or otherwise continue context, always use `--continue-job` after the first request. Do not simulate continuity by pasting a transcript into a new prompt, and do not put labels like `Codex:` and `ChatGPT:` into a new prompt as a substitute for threading.
 
+## Prompt Style
+
+When having a multi-message conversation with ChatGPT, send natural user-facing messages. Do not include narrator framing, turn labels, or delegation disclaimers unless the user explicitly asks for them. The prompt should be only what ChatGPT should respond to in that moment.
+
+Avoid prompts like:
+
+```text
+I'm Codex, acting on behalf of Mason. Let's have a brief three-turn conversation. Turn 1: pick a practical software/product topic...
+Turn 2: We see the usual problem...
+```
+
+Prefer prompts like:
+
+```text
+Pick a practical software/product topic you think is worth discussing this week, explain why it matters, and ask me one focused follow-up question.
+We see the usual problem: logs, metrics, and traces exist, but they are fragmented across tools, too noisy, and rarely tied cleanly to product impact. What would you do first to make observability more useful without turning it into a large platform project?
+Assume the stack is Datadog, Sentry, OpenTelemetry, and scattered product analytics. Give me a crisp final recommendation: one first-week plan, one metric that proves this is helping, and one anti-pattern to avoid.
+```
+
+Use `--continue-job` for continuity; do not encode the turn number or conversation mechanics into the prompt.
+
 Ask about a file:
 
 ```bash

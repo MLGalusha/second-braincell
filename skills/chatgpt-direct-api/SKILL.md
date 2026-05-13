@@ -23,7 +23,7 @@ If setup is missing, ask the user to run:
 npm run setup
 ```
 
-Setup requires one ChatGPT Project URL and one authenticated `chatgpt.com` cURL copied from DevTools. The runner stores extracted headers in `.local/auth.json` and the project URL in `.local/config.json`.
+Setup is clipboard-based. Tell the user to copy the Project URL and press Enter, then copy one authenticated `chatgpt.com` cURL from DevTools and press Enter. They should not paste the cURL into the terminal because DevTools cURLs can be multiline. The runner stores extracted headers in `.local/auth.json` and the project URL in `.local/config.json`.
 
 ## Commands
 

@@ -11,25 +11,54 @@ The cURL supplies auth headers only. Request bodies for messages, images, Deep R
 
 ## Setup
 
-1. In ChatGPT, create a Project named `Codex`.
-2. In the Project settings, use project-only memory.
-3. Open the Project in your browser and copy its URL.
-4. Open DevTools Network, send any message in the Project, right-click the `chatgpt.com` request to `/backend-api/f/conversation`, and copy as cURL.
-5. Run setup:
+Run setup:
 
 ```bash
 npm run setup
 ```
+
+The interactive setup is clipboard-based. You copy each item, then press Enter in the terminal. Do not paste the copied value into the terminal.
+
+### Step 1: Create The ChatGPT Project
+
+1. Open ChatGPT in your browser.
+2. Create a Project named `Codex`.
+3. Open the Project settings.
+4. Set memory to project-only.
+5. Open the `Codex` Project.
+
+### Step 2: Copy The Project URL
+
+1. Click the browser address bar while the `Codex` Project is open.
+2. Copy the URL.
+3. Go back to the terminal.
+4. Press Enter when setup asks for the Project URL.
+
+Do not paste the URL. The setup command reads it from your clipboard.
+
+### Step 3: Copy One Authenticated cURL
+
+1. Keep the same `Codex` Project open in ChatGPT.
+2. Open browser DevTools.
+3. Open the Network tab.
+4. Send a short message in the Project, such as `setup test`.
+5. In the Network tab, find the request named `conversation` or `/backend-api/f/conversation`.
+6. Right-click that request.
+7. Choose Copy > Copy as cURL.
+8. Go back to the terminal.
+9. Press Enter when setup asks for the authenticated cURL.
+
+Do not paste the cURL. DevTools cURLs are often multiline and can break terminal input. The setup command reads the copied cURL from your clipboard.
 
 Setup writes ignored local files:
 
 - `.local/config.json`: project URL and local runner config
 - `.local/auth.json`: auth headers extracted from the copied cURL
 
-For non-interactive setup:
+For non-interactive setup or systems without `pbpaste`, save the cURL to a local ignored file and pass it explicitly:
 
 ```bash
-pbpaste | npm run setup -- --project-url "https://chatgpt.com/g/g-p-.../project"
+npm run setup -- --project-url "https://chatgpt.com/g/g-p-.../project" --curl-file ./request.curl
 ```
 
 Check readiness:

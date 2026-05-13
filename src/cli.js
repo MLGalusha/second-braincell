@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -63,10 +63,24 @@ Options:
 async function promptSetupValue(question) {
   const rl = createInterface({ input, output });
   try {
-    return (await rl.question(question)).trim();
+    return await rl.question(question);
   } finally {
     rl.close();
   }
+}
+
+function readClipboard() {
+  try {
+    return execFileSync("pbpaste", { encoding: "utf8", maxBuffer: 1024 * 1024 * 16 }).trim();
+  } catch {
+    throw new Error("Could not read the clipboard with `pbpaste`. Use `--project-url` and `--curl-file`, or pipe the cURL on stdin.");
+  }
+}
+
+async function readClipboardAfterEnter(instruction) {
+  console.log(instruction);
+  await promptSetupValue("Press Enter after you have copied it. Do not paste it here. ");
+  return readClipboard();
 }
 
 async function runSetup(argv) {
@@ -74,9 +88,29 @@ async function runSetup(argv) {
   let curlText = getFlag(argv, "--curl", undefined);
   const curlFile = getFlag(argv, "--curl-file", undefined);
   if (curlFile) curlText = readCurlInputFile(curlFile);
-  if (!projectUrl && process.stdin.isTTY) projectUrl = await promptSetupValue("ChatGPT project URL: ");
+  if (!projectUrl && process.stdin.isTTY) {
+    console.log(
+      [
+        "ChatGPT Project setup:",
+        "1. Open ChatGPT and create a Project named `Codex`.",
+        "2. In Project settings, set memory to project-only.",
+        "3. Open that Project in the browser.",
+      ].join("\n"),
+    );
+    projectUrl = await readClipboardAfterEnter("4. Copy the Project URL from the browser address bar.");
+  }
   if (!curlText && process.stdin.isTTY) {
-    curlText = await promptSetupValue("Paste one authenticated chatgpt.com cURL from DevTools: ");
+    console.log(
+      [
+        "",
+        "Authenticated cURL setup:",
+        "1. In the same ChatGPT Project, open DevTools > Network.",
+        "2. Send a short message in the Project.",
+        "3. Click the request named `conversation` or `/backend-api/f/conversation`.",
+        "4. Right-click it and choose Copy > Copy as cURL.",
+      ].join("\n"),
+    );
+    curlText = await readClipboardAfterEnter("5. Copy that cURL. It may be multiline; do not paste it into this terminal.");
   }
   if (!curlText && !process.stdin.isTTY) curlText = readFileSync(0, "utf8");
   if (!projectUrl) throw new Error("Missing project URL. Run `npm run setup -- --project-url <url>` when piping a cURL on stdin.");

@@ -249,15 +249,15 @@ async function runDirectApiMessage(argv) {
           statusCommand: `npm run chatgpt -- status ${job.id}`,
           watchStatusPath: resolve(JOBS_DIR, job.id, "watch-status.json"),
           agentInstruction: isAsync
-            ? `Async ${kind} job submitted and background watcher started. Create a thread heartbeat automation with a ${kind === "image" ? "30-second" : "5-minute"} interval to report completion when available, then do not poll or wait unless explicitly asked.`
+            ? `Async ${kind} job submitted and background watcher started. Create a thread heartbeat automation with a ${kind === "image" ? "30-second" : "10-minute"} interval to report completion when available, then do not poll or wait unless explicitly asked.`
             : undefined,
           heartbeatAutomation: isAsync
             ? {
                 requiredWhenAvailable: true,
                 kind: "heartbeat",
                 destination: "thread",
-                intervalSeconds: kind === "image" ? 30 : 300,
-                rrule: kind === "image" ? "FREQ=SECONDLY;INTERVAL=30" : "FREQ=MINUTELY;INTERVAL=5",
+                intervalSeconds: kind === "image" ? 30 : 600,
+                rrule: kind === "image" ? "FREQ=SECONDLY;INTERVAL=30" : "FREQ=MINUTELY;INTERVAL=10",
                 name: kind === "image" ? "Check ChatGPT image job" : "Check ChatGPT Deep Research job",
                 prompt: `In /Users/masongalusha/Workspace/projects/second-braincell, check Second Braincell job ${job.id} with npm run status -- ${job.id}. If it is complete, report the artifact path and render the image/report when possible. If it is still waiting, check again later without extra commentary.`,
               }

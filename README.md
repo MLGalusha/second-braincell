@@ -135,6 +135,12 @@ Invalid model and reasoning combinations fail before sending.
 
 Never commit or share cookies, auth headers, proof/sentinel tokens, signed URLs, HARs, cURLs, `.env`, `.local/`, or generated `output/` artifacts. The repo ignores those paths and file types by default.
 
+## Contributions
+
+Second Braincell was built in a day to solve a real Codex workflow, so expect rough edges. It is not a polished SDK or official API client; it is a pragmatic local runner around browser-observed ChatGPT web API calls.
+
+Issues, fixes, better setup instructions, new request builders, and reliability improvements are welcome. Please keep contributions careful about privacy: no committed cookies, auth headers, cURLs, HARs, signed URLs, `.local/`, or generated `output/` files.
+
 ## Development
 
 ```bash

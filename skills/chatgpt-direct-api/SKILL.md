@@ -58,4 +58,8 @@ Refresh a job:
 npm run status -- <job-id>
 ```
 
-Jobs are async by default. Use the printed status command or `npm run watch-api-job -- <job-id> --once` to check progress.
+Normal text chat is synchronous by default. Image generation and Deep Research are async by default.
+
+For image jobs, check every 30 seconds for up to 5 minutes, then report if it is still waiting. For Deep Research jobs, check every 5 minutes for up to 2 hours.
+
+Use the printed status command or `npm run watch-api-job -- <job-id> --once` to check progress manually.

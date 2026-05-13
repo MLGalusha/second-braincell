@@ -175,11 +175,15 @@ async function runDirectApiMessage(argv) {
   const jobKind = getFlag(argv, "--job-kind", outputKind === "image" ? "api-image" : "api-message");
   const kind = getFlag(argv, "--kind", jobKind === "api-deep-research" ? "deep-research" : outputKind === "image" ? "image" : "message");
   const quality = getFlag(argv, "--quality", "high");
+  const isAsync = hasFlag(argv, "--async");
+  const suppressInitialResponse = isAsync && kind === "deep-research";
+  const watchIntervalSeconds = getFlag(argv, "--watch-interval-seconds", undefined);
+  const watchTimeoutSeconds = getFlag(argv, "--watch-timeout-seconds", undefined);
   const attachFiles = getFlags(argv, "--attach-file");
   const { job } = createJob({
     kind: jobKind,
     prompt,
-    options: { curlPath, model, thinkingEffort, modelPreset, outputKind, jobKind, kind, quality, attachFiles },
+    options: { curlPath, model, thinkingEffort, modelPreset, outputKind, jobKind, kind, quality, attachFiles, watchIntervalSeconds, watchTimeoutSeconds },
   });
 
   try {
@@ -204,12 +208,12 @@ async function runDirectApiMessage(argv) {
       model,
       thinkingEffort,
       attachments,
-      fetchFinalText: outputKind !== "image",
-      forceFetchFinalText: outputKind !== "image" && !hasFlag(argv, "--async"),
+      fetchFinalText: outputKind !== "image" && kind !== "deep-research",
+      forceFetchFinalText: outputKind !== "image" && kind !== "deep-research" && !isAsync,
       kind,
       quality,
     });
-    job.status = result.ok && !result.errorSeen ? (hasFlag(argv, "--async") ? "submitted" : "completed") : "failed";
+    job.status = result.ok && !result.errorSeen ? (isAsync ? "submitted" : "completed") : "failed";
     job.statusCode = result.status;
     job.contentType = result.contentType;
     job.conversationId = result.conversationId;
@@ -220,13 +224,13 @@ async function runDirectApiMessage(argv) {
     if (curlPath) job.options.curlPath = curlPath;
     saveJob(job);
     const responsePath = resolve(JOBS_DIR, job.id, "response.md");
-    if (result.responseText && outputKind !== "image") writeFileSync(responsePath, `${result.responseText}\n`);
-    if (!hasFlag(argv, "--async") && outputKind === "image") await updateApiJobStatus(job);
-    if (hasFlag(argv, "--async") && hasFlag(argv, "--watch")) {
+    if (result.responseText && outputKind !== "image" && !suppressInitialResponse) writeFileSync(responsePath, `${result.responseText}\n`);
+    if (!isAsync && outputKind === "image") await updateApiJobStatus(job);
+    if (isAsync && hasFlag(argv, "--watch")) {
       startApiWatcher(job.id, {
         notify: hasFlag(argv, "--notify"),
-        intervalSeconds: getFlag(argv, "--watch-interval-seconds", undefined),
-        timeoutSeconds: getFlag(argv, "--watch-timeout-seconds", undefined),
+        intervalSeconds: watchIntervalSeconds,
+        timeoutSeconds: watchTimeoutSeconds,
       });
     }
 
@@ -238,8 +242,8 @@ async function runDirectApiMessage(argv) {
           status: result.status,
           ok: result.ok,
           conversationId: result.conversationId ? ":conversation_id" : null,
-          responsePath: existsSync(responsePath) && outputKind !== "image" ? responsePath : undefined,
-          response: outputKind === "image" ? undefined : result.responseText,
+          responsePath: existsSync(responsePath) && outputKind !== "image" && !suppressInitialResponse ? responsePath : undefined,
+          response: outputKind === "image" || suppressInitialResponse ? undefined : result.responseText,
           artifacts: loadJob(job.id).artifacts,
           statusCommand: `npm run chatgpt -- status ${job.id}`,
           watchStatusPath: resolve(JOBS_DIR, job.id, "watch-status.json"),
@@ -288,12 +292,20 @@ function applyModelPreset(argv, { defaultModel = DEFAULT_TEXT_MODEL } = {}) {
 async function runAsk(argv) {
   const kind = getFlag(argv, "--kind", "message");
   if (!["message", "image", "deep-research"].includes(kind)) throw new Error("--kind must be message, image, or deep-research");
-  const asyncByDefault = !hasFlag(argv, "--sync");
+  const asyncByDefault = kind !== "message" && !hasFlag(argv, "--sync");
   let nextArgv = withoutFlags(argv, ["--kind", "--sync"]);
 
   if (asyncByDefault) {
     nextArgv = ensureFlag(nextArgv, "--async");
     nextArgv = ensureFlag(nextArgv, "--watch");
+    if (kind === "image") {
+      nextArgv = ensureFlag(nextArgv, "--watch-interval-seconds", "30");
+      nextArgv = ensureFlag(nextArgv, "--watch-timeout-seconds", "300");
+    }
+    if (kind === "deep-research") {
+      nextArgv = ensureFlag(nextArgv, "--watch-interval-seconds", "300");
+      nextArgv = ensureFlag(nextArgv, "--watch-timeout-seconds", "7200");
+    }
   }
 
   if (kind === "image") {

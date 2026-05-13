@@ -107,7 +107,7 @@ Refresh a job:
 npm run status -- <job-id>
 ```
 
-`ask` is async by default. It submits quickly, creates a job under `output/jobs/`, starts a watcher, and prints the status command plus watcher status path. Use `--sync` when you want the initial command to wait.
+Text chat is synchronous by default. Image generation and Deep Research are async by default: they submit quickly, create a job under `output/jobs/`, start a watcher, and print the status command plus watcher status path. Use `--sync` for image or Deep Research only when you want the initial command to wait.
 
 ## Output
 

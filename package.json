@@ -1,5 +1,5 @@
 {
-  "name": "chatgpt-project-runner",
+  "name": "second-braincell",
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
@@ -22,6 +22,6 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
+  "description": "A local ChatGPT sidecar for Codex agents: Deep Research, images, and file RAG through your ChatGPT account.",
   "type": "module"
 }

@@ -1,6 +1,6 @@
-# ChatGPT Direct API Runner
+# Second Braincell
 
-Use this skill when working in this repository to send prompts, files, images, or Deep Research tasks through the local ChatGPT Project Runner.
+Use this skill when working in this repository to send prompts, files, images, or Deep Research tasks through Second Braincell.
 
 ## Rules
 

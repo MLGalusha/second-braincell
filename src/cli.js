@@ -107,7 +107,7 @@ async function runSetup(argv) {
   if (curlFile) curlText = readCurlInputFile(curlFile);
   const interactive = process.stdin.isTTY && !projectUrl && !curlText && !curlFile;
   if (interactive) {
-    console.log(color("1", "\nChatGPT Project Runner setup"));
+    console.log(color("1", "\nSecond Braincell setup"));
     console.log("This setup reads from your clipboard after you press Enter. Anything typed or pasted at these prompts is ignored.");
   }
   if (!projectUrl && process.stdin.isTTY) {

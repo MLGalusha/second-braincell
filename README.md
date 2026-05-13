@@ -1,8 +1,8 @@
-# ChatGPT Project Runner
+# Second Braincell
 
-Give your Codex agent a direct path into your own ChatGPT Project.
+Give your Codex agent a second braincell: a direct path into your own ChatGPT Project for work ChatGPT is already good at.
 
-This runner lets Codex ask ChatGPT for work that ChatGPT is especially good at:
+Second Braincell lets Codex hand off tasks to ChatGPT for:
 
 - Deep Research reports
 - image generation
@@ -11,21 +11,33 @@ This runner lets Codex ask ChatGPT for work that ChatGPT is especially good at:
 
 This is useful because Codex can call this local runner instead of trying to recreate those workflows itself. For large PDFs and file-heavy questions, ChatGPT's uploaded-file retrieval is often a better fit than iterative search from Codex. ChatGPT image generation and Deep Research also run through your ChatGPT account, not your Codex rate limit.
 
-The runner uses browser-observed ChatGPT web API endpoints from your already-authenticated browser session. It does not use Playwright or Chrome UI automation.
+Second Braincell uses browser-observed ChatGPT web API endpoints from your already-authenticated browser session. It does not use Playwright or Chrome UI automation.
 
-## What Setup Does
+## How It Works
 
-Setup needs:
+Second Braincell is a local Node.js CLI that your Codex agent can call with `npm run ask`.
 
-- one ChatGPT Project URL
-- one authenticated `chatgpt.com` cURL copied from DevTools
+Setup captures two local-only pieces of information:
 
-The cURL supplies auth headers only. Source code in this repo builds the request bodies for messages, images, Deep Research, and file attachments.
+- your ChatGPT Project URL
+- auth headers extracted from one authenticated `chatgpt.com` cURL copied from DevTools
 
-Setup writes ignored local files:
+Those are stored in ignored files:
 
-- `.local/config.json`: project URL and local runner config
-- `.local/auth.json`: auth headers extracted from the copied cURL
+- `.local/config.json`
+- `.local/auth.json`
+
+The copied cURL is not used as a request template. It only provides auth headers. The source code in this repo builds the actual request bodies for messages, images, Deep Research, and file attachments.
+
+When Codex asks Second Braincell to do something, the runner:
+
+1. Builds the right ChatGPT web API request body in source code.
+2. Sends it to the ChatGPT Project using your local auth headers.
+3. Creates a local job under `output/jobs/`.
+4. Starts a watcher for async work like images and Deep Research.
+5. Writes final text, reports, images, and job status into ignored `output/` files.
+
+For file and PDF questions, the runner uses ChatGPT's upload flow: create the file, upload bytes to the signed URL, process the upload, and attach the resulting file id to the message. Signed URLs and file ids are not printed in normal output.
 
 ## Quick Start
 
@@ -57,7 +69,7 @@ After setup is complete, go to your Codex agent and tell it:
 
 ```text
 Read and follow skills/chatgpt-direct-api/SKILL.md.
-Use the ChatGPT direct API runner to ask: Reply with exactly: agent works
+Use Second Braincell to ask ChatGPT: Reply with exactly: agent works
 ```
 
 If your agent supports installing repo skills, install the skill from `skills/chatgpt-direct-api/SKILL.md`. Otherwise, telling the agent to read that file is enough.

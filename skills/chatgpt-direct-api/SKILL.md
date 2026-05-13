@@ -109,6 +109,40 @@ Assume the stack is Datadog, Sentry, OpenTelemetry, and scattered product analyt
 
 Use `converse` or `--continue-job` for continuity; do not encode the turn number or conversation mechanics into the prompt.
 
+## Models
+
+Default to ChatGPT `auto` mode unless the user asks for a specific model.
+
+```bash
+npm run ask -- --prompt "..."
+npm run ask -- --model auto --prompt "..."
+npm run ask -- --model instant --prompt "..."
+npm run ask -- --model thinking --reasoning standard --prompt "..."
+npm run ask -- --model thinking --reasoning extended --prompt "..."
+npm run ask -- --model pro --reasoning standard --prompt "..."
+npm run ask -- --model pro --reasoning extended --prompt "..."
+npm run ask -- --model 5.3 --prompt "..."
+npm run ask -- --model best --prompt "..."
+```
+
+Model meanings:
+
+- `auto`: ChatGPT's Auto mode; this is the default.
+- `instant`: GPT-5.5 Instant.
+- `thinking`: GPT-5.5 Thinking with `standard` or `extended`.
+- `pro`: GPT-5.5 Pro with `standard` or `extended`, only when the signed-in account has access.
+- `5.3`: GPT-5.3 Instant legacy fallback.
+- `best`: use cached model-check results, preferring `pro extended`, then `thinking extended`, `thinking standard`, `instant`, `5.3`, and `auto`.
+
+Run a model check when setup changes or when model availability matters:
+
+```bash
+npm run model-check
+npm run model-check -- --model pro
+```
+
+If the user explicitly asks for `pro` and it is unavailable, report that clearly instead of silently falling back. Use `best` only when the user asks for the best available model or allows fallback. Do not use `light` or `heavy`; local endpoint tests returned HTTP 422 for those reasoning values.
+
 Ask about a file:
 
 ```bash

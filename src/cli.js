@@ -6,9 +6,9 @@ import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createJob, listJobs, loadJob, saveJob, updateJob } from "./jobs.js";
-import { IMAGES_DIR, JOBS_DIR, OUTPUT_DIR } from "./config.js";
-import { displayPath, ensureDir, getFlag, getFlags, hasFlag, readTextArg, slugify, uniquePath } from "./util.js";
-import { DEFAULT_TEXT_MODEL, capabilities, resolveModelPreset } from "./model-presets.js";
+import { IMAGES_DIR, JOBS_DIR, OUTPUT_DIR, ROOT_DIR } from "./config.js";
+import { displayPath, ensureDir, getFlag, getFlags, hasFlag, readJson, readTextArg, slugify, uniquePath, writeJson } from "./util.js";
+import { BEST_MODEL_ORDER, DEFAULT_TEXT_MODEL, capabilities, modelKey, normalizeModelName, resolveModelPreset } from "./model-presets.js";
 import {
   downloadGeneratedImage,
   deepResearchReportFromConversation,
@@ -68,6 +68,7 @@ Usage:
   npm run chatgpt -- transcript <chat-number|conversation-id|job-id>
   npm run chatgpt -- status <job-id>
   npm run chatgpt -- capabilities
+  npm run chatgpt -- model-check
   npm run chatgpt -- api-message --prompt "..."
   npm run chatgpt -- api-deep-research --prompt "..."
   npm run chatgpt -- api-image --async --watch --prompt "..."
@@ -83,7 +84,7 @@ Options:
   --curl-file PATH
   --project-url URL
   --model MODEL
-  --reasoning light|standard|heavy|extended
+  --reasoning standard|extended
   --thinking-effort VALUE
   --kind message|image|deep-research
   --quality high|instant
@@ -522,15 +523,182 @@ function ensureFlag(argv, name, value = null) {
   return value === null ? [...argv, name] : [...argv, name, String(value)];
 }
 
+const MODEL_CAPABILITIES_PATH = resolve(ROOT_DIR, ".local", "model-capabilities.json");
+
+function nowIsoForCli() {
+  return new Date().toISOString();
+}
+
+function loadModelCapabilities() {
+  if (!existsSync(MODEL_CAPABILITIES_PATH)) return null;
+  try {
+    return readJson(MODEL_CAPABILITIES_PATH);
+  } catch {
+    return null;
+  }
+}
+
+function saveModelCapabilities(data) {
+  ensureDir(dirname(MODEL_CAPABILITIES_PATH));
+  writeJson(MODEL_CAPABILITIES_PATH, data);
+}
+
+function modelCheckCases({ modelName, reasoning } = {}) {
+  if (modelName) {
+    const normalized = normalizeModelName(modelName);
+    if (normalized === "thinking" || normalized === "pro") {
+      const efforts = reasoning ? [reasoning] : ["standard", "extended"];
+      return efforts.map((effort) => ({ modelName: normalized, reasoning: effort }));
+    }
+    return [{ modelName: normalized, reasoning }];
+  }
+  return [
+    { modelName: "auto" },
+    { modelName: "instant" },
+    { modelName: "thinking", reasoning: "standard" },
+    { modelName: "thinking", reasoning: "extended" },
+    { modelName: "pro", reasoning: "standard" },
+    { modelName: "pro", reasoning: "extended" },
+    { modelName: "5.3" },
+  ];
+}
+
+function formatModelCheckName(result) {
+  return result.reasoning ? `${result.modelName} ${result.reasoning}` : result.modelName;
+}
+
+function resolveBestModelFromResults(results) {
+  const byKey = new Map(results.map((result) => [result.key, result]));
+  for (const candidate of BEST_MODEL_ORDER) {
+    const found = byKey.get(modelKey(candidate));
+    if (found?.available) return found;
+  }
+  return null;
+}
+
+function resolveBestModelFromCache() {
+  const cache = loadModelCapabilities();
+  const best = cache?.best;
+  if (best?.modelName) return { modelName: best.modelName, reasoning: best.reasoning };
+  return BEST_MODEL_ORDER[0];
+}
+
 function applyModelPreset(argv, { defaultModel = DEFAULT_TEXT_MODEL } = {}) {
-  const requestedModel = getFlag(argv, "--model", defaultModel);
-  const requestedReasoning = getFlag(argv, "--reasoning", getFlag(argv, "--thinking-effort", undefined));
+  let requestedModel = getFlag(argv, "--model", defaultModel);
+  let requestedReasoning = getFlag(argv, "--reasoning", getFlag(argv, "--thinking-effort", undefined));
+  if (normalizeModelName(requestedModel) === "best") {
+    const best = resolveBestModelFromCache();
+    requestedModel = best.modelName;
+    requestedReasoning = requestedReasoning || best.reasoning;
+  }
   const resolved = resolveModelPreset({ modelName: requestedModel, reasoning: requestedReasoning });
   let next = withoutFlags(argv, ["--model", "--reasoning", "--thinking-effort"]);
   if (resolved.model) next = ensureFlag(next, "--model", resolved.model);
   if (resolved.thinkingEffort) next = ensureFlag(next, "--thinking-effort", resolved.thinkingEffort);
   if (resolved.presetName) next = ensureFlag(next, "--model-preset", resolved.presetName);
   return next;
+}
+
+async function waitForAssistantText(headers, conversationId, { expected, timeoutMs = 20000, intervalMs = 1500 } = {}) {
+  if (!conversationId) return "";
+  const started = Date.now();
+  let latest = "";
+  while (Date.now() - started < timeoutMs) {
+    const history = await fetchConversation(headers, conversationId);
+    latest = latestAssistantTextFromConversation(history);
+    if (latest && (!expected || latest.includes(expected))) return latest;
+    await new Promise((resolveWait) => setTimeout(resolveWait, intervalMs));
+  }
+  return latest;
+}
+
+async function runSingleModelCheck(testCase, headers) {
+  const resolved = resolveModelPreset({ modelName: testCase.modelName, reasoning: testCase.reasoning, allowRawModel: false });
+  const key = modelKey(testCase);
+  const expected = `MODEL_CHECK_${key.replace(/[^a-z0-9]+/gi, "_").toUpperCase()}_OK`;
+  const checkedAt = nowIsoForCli();
+  try {
+    const result = await sendApiMessage({
+      prompt: `Reply with exactly: ${expected}`,
+      model: resolved.model,
+      thinkingEffort: resolved.thinkingEffort,
+      fetchFinalText: true,
+      forceFetchFinalText: true,
+      kind: "message",
+    });
+    let responseText = result.responseText || "";
+    if (result.ok && (!responseText || !responseText.includes(expected))) {
+      responseText = await waitForAssistantText(headers, result.conversationId, { expected });
+    }
+    const matched = responseText.trim() === expected;
+    return {
+      ...testCase,
+      key,
+      label: resolved.presetName,
+      model: resolved.model || null,
+      thinkingEffort: resolved.thinkingEffort || null,
+      available: Boolean(result.ok && matched),
+      status: result.status,
+      contentType: result.contentType,
+      responseMatched: matched,
+      responseLength: responseText.length,
+      checkedAt,
+    };
+  } catch (error) {
+    return {
+      ...testCase,
+      key,
+      label: resolved.presetName,
+      model: resolved.model || null,
+      thinkingEffort: resolved.thinkingEffort || null,
+      available: false,
+      error: error instanceof Error ? error.message : String(error),
+      checkedAt,
+    };
+  }
+}
+
+function formatModelCheck(results, path, best = resolveBestModelFromResults(results)) {
+  const lines = [color("1;36", "Second Braincell Model Check"), ""];
+  for (const result of results) {
+    const marker = result.available ? color("32", "available") : color("31", "unavailable");
+    const detail = result.status ? `HTTP ${result.status}` : result.error || "not checked";
+    lines.push(`${formatModelCheckName(result)}: ${marker} (${detail})`);
+  }
+  if (best) {
+    lines.push("");
+    lines.push(`best: ${formatModelCheckName(best)}`);
+  }
+  lines.push("");
+  lines.push(`Cache: ${path}`);
+  return lines.join("\n");
+}
+
+async function runModelCheck(argv) {
+  const cases = modelCheckCases({
+    modelName: getFlag(argv, "--model", undefined),
+    reasoning: getFlag(argv, "--reasoning", getFlag(argv, "--thinking-effort", undefined)),
+  });
+  const headers = loadLocalHeaders();
+  const results = [];
+  for (const testCase of cases) {
+    results.push(await runSingleModelCheck(testCase, headers));
+  }
+  const previous = loadModelCapabilities();
+  const mergedResults = { ...(previous?.results || {}) };
+  for (const result of results) mergedResults[result.key] = result;
+  const payload = {
+    checkedAt: nowIsoForCli(),
+    cachePath: MODEL_CAPABILITIES_PATH,
+    results: mergedResults,
+    best: resolveBestModelFromResults(Object.values(mergedResults)),
+  };
+  saveModelCapabilities(payload);
+  if (hasFlag(argv, "--json") || hasFlag(argv, "--detailed")) {
+    console.log(JSON.stringify(payload, null, 2));
+  } else {
+    console.log(formatModelCheck(results, MODEL_CAPABILITIES_PATH, payload.best));
+  }
 }
 
 async function runAsk(argv) {
@@ -1082,6 +1250,11 @@ async function main() {
       } else {
         console.log(formatHumanCapabilities(data));
       }
+      return;
+    }
+
+    if (command === "model-check") {
+      await runModelCheck(argv);
       return;
     }
 

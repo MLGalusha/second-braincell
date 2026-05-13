@@ -93,7 +93,7 @@ export function buildConversationBody({
 }
 
 export function buildMessageBody(options = {}) {
-  return buildConversationBody({ ...options, model: options.model || "gpt-5-3" });
+  return buildConversationBody(options);
 }
 
 export function buildImageHighBody(options = {}) {

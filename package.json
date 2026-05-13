@@ -13,6 +13,7 @@
     "resume": "node src/cli.js resume",
     "transcript": "node src/cli.js transcript",
     "capabilities": "node src/cli.js capabilities",
+    "model-check": "node src/cli.js model-check",
     "status": "node src/cli.js status",
     "verify-api": "node scripts/verify-api-endpoints.js",
     "analyze-send-curl": "node scripts/analyze-send-curl.js",

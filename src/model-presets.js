@@ -1,42 +1,77 @@
 import { localSetupStatus } from "./local-config.js";
 
 export const MODEL_PRESETS = {
-  "gpt-5.3": {
+  auto: {
+    label: "Auto",
+    model: "auto",
+    defaultReasoning: null,
+    allowedReasoning: [],
+    notes: "Use ChatGPT's default model selection for the Project.",
+  },
+  instant: {
+    label: "GPT-5.5 Instant",
+    model: "gpt-5-5",
+    defaultReasoning: null,
+    allowedReasoning: [],
+    notes: "Fast GPT-5.5 path; no thinking_effort override.",
+  },
+  thinking: {
+    label: "GPT-5.5 Thinking",
+    model: "gpt-5-5-thinking",
+    defaultReasoning: "standard",
+    allowedReasoning: ["standard", "extended"],
+    notes: "Stronger GPT-5.5 reasoning path. Light/heavy are not exposed because they returned 422 in local endpoint tests.",
+  },
+  pro: {
+    label: "GPT-5.5 Pro",
+    model: "gpt-5-5-pro",
+    defaultReasoning: "extended",
+    allowedReasoning: ["standard", "extended"],
+    notes: "Highest reasoning path when the signed-in ChatGPT account has Pro access.",
+  },
+  "5.3": {
     label: "GPT-5.3",
     model: "gpt-5-3",
     defaultReasoning: null,
     allowedReasoning: [],
     notes: "General text default; no thinking_effort override.",
   },
-  "gpt-5.5-thinking": {
-    label: "GPT-5.5 Thinking",
-    model: "gpt-5-5-thinking",
-    defaultReasoning: "standard",
-    allowedReasoning: ["light", "standard", "heavy", "extended"],
-    notes: "Default higher-reasoning model.",
-  },
-  "gpt-5.5-pro": {
-    label: "GPT-5.5 Pro",
-    model: "gpt-5-5-pro",
-    defaultReasoning: "extended",
-    allowedReasoning: ["standard", "extended"],
-    notes: "Highest reasoning preset.",
-  },
 };
 
-export const DEFAULT_TEXT_MODEL = "gpt-5.3";
-export const DEFAULT_REASONING_MODEL = "gpt-5.5-thinking";
+export const BEST_MODEL_ORDER = [
+  { modelName: "pro", reasoning: "extended" },
+  { modelName: "thinking", reasoning: "extended" },
+  { modelName: "thinking", reasoning: "standard" },
+  { modelName: "instant" },
+  { modelName: "5.3" },
+  { modelName: "auto" },
+];
+
+export const DEFAULT_TEXT_MODEL = "auto";
+export const DEFAULT_REASONING_MODEL = "thinking";
 
 const MODEL_ALIASES = {
-  "5.3": "gpt-5.3",
-  "gpt 5.3": "gpt-5.3",
-  "gpt-5-3": "gpt-5.3",
-  "5.5 thinking": "gpt-5.5-thinking",
-  "gpt 5.5 thinking": "gpt-5.5-thinking",
-  "gpt-5-5-thinking": "gpt-5.5-thinking",
-  "5.5 pro": "gpt-5.5-pro",
-  "gpt 5.5 pro": "gpt-5.5-pro",
-  "gpt-5-5-pro": "gpt-5.5-pro",
+  default: "auto",
+  chatgpt: "auto",
+  "gpt-5.5": "instant",
+  "5.5": "instant",
+  "5.5 instant": "instant",
+  "gpt 5.5 instant": "instant",
+  "gpt-5-5": "instant",
+  "gpt-5-5-instant": "instant",
+  "5.3 instant": "5.3",
+  "gpt 5.3 instant": "5.3",
+  "gpt 5.3": "5.3",
+  "gpt-5.3": "5.3",
+  "gpt-5-3": "5.3",
+  "5.5 thinking": "thinking",
+  "gpt 5.5 thinking": "thinking",
+  "gpt-5.5-thinking": "thinking",
+  "gpt-5-5-thinking": "thinking",
+  "5.5 pro": "pro",
+  "gpt 5.5 pro": "pro",
+  "gpt-5.5-pro": "pro",
+  "gpt-5-5-pro": "pro",
 };
 
 export function normalizeModelName(modelName) {
@@ -68,6 +103,11 @@ export function resolveModelPreset({ modelName, reasoning, allowRawModel = true 
     thinkingEffort: reasoning || preset.defaultReasoning || undefined,
     presetName: normalized,
   };
+}
+
+export function modelKey({ modelName, reasoning } = {}) {
+  const normalized = normalizeModelName(modelName);
+  return reasoning ? `${normalized}:${reasoning}` : normalized;
 }
 
 export function capabilities() {

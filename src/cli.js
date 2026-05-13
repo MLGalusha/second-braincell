@@ -171,7 +171,8 @@ function formatHumanCapabilities(data) {
 
 function formatDate(value) {
   if (!value) return "unknown";
-  const date = new Date(value);
+  const normalized = typeof value === "number" && value > 0 && value < 1000000000000 ? value * 1000 : value;
+  const date = new Date(normalized);
   if (Number.isNaN(date.getTime())) return String(value);
   return date.toLocaleString(undefined, {
     year: "numeric",
@@ -896,6 +897,64 @@ function transcriptPathFor(history, conversationId, explicitPath) {
   return uniquePath(resolve(OUTPUT_DIR, "conversations"), title, ".md");
 }
 
+function messageText(message) {
+  return (message.content?.parts || []).filter((part) => typeof part === "string").join("\n").trim();
+}
+
+function truncateMiddle(value, length = 900) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (text.length <= length) return text;
+  const head = Math.floor((length - 20) * 0.6);
+  const tail = length - 20 - head;
+  return `${text.slice(0, head).trimEnd()} ... ${text.slice(-tail).trimStart()}`;
+}
+
+function conversationSummary(history, conversationId, { maxMessages = 8, maxChars = 900 } = {}) {
+  const messages = conversationMessages(history);
+  const firstUser = messages.find((message) => message.author.role === "user");
+  const assistantMessages = messages.filter((message) => message.author.role === "assistant");
+  const latestAssistant = assistantMessages.at(-1);
+  const included = messages.slice(-maxMessages);
+  return {
+    conversationId,
+    title: history.title || null,
+    createTime: history.create_time || null,
+    updateTime: history.update_time || null,
+    messageCount: messages.length,
+    firstUserMessage: firstUser ? truncateMiddle(messageText(firstUser), maxChars) : null,
+    latestAssistantMessage: latestAssistant ? truncateMiddle(messageText(latestAssistant), maxChars) : null,
+    recentMessages: included.map((message) => ({
+      role: message.author.role === "assistant" ? "ChatGPT" : "User",
+      text: truncateMiddle(messageText(message), maxChars),
+    })),
+  };
+}
+
+function formatConversationSummary(summary) {
+  const lines = [color("1;36", summary.title || "Untitled Chat"), ""];
+  lines.push(`Conversation ID: ${summary.conversationId}`);
+  lines.push(`Messages: ${summary.messageCount}`);
+  if (summary.updateTime) lines.push(`Updated: ${formatDate(summary.updateTime)}`);
+  if (summary.firstUserMessage) {
+    lines.push("");
+    lines.push(color("1", "Started With"));
+    lines.push(summary.firstUserMessage);
+  }
+  if (summary.latestAssistantMessage) {
+    lines.push("");
+    lines.push(color("1", "Latest ChatGPT Response"));
+    lines.push(summary.latestAssistantMessage);
+  }
+  if (summary.recentMessages.length) {
+    lines.push("");
+    lines.push(color("1", "Recent Messages"));
+    for (const message of summary.recentMessages) {
+      lines.push(`- ${message.role}: ${message.text}`);
+    }
+  }
+  return lines.join("\n");
+}
+
 function projectInstructionsBackupPath(projectId) {
   return uniquePath(resolve(OUTPUT_DIR, "project-instructions"), `${projectId}_${new Date().toISOString().replace(/[:.]/g, "-")}`, ".md");
 }
@@ -1168,6 +1227,28 @@ async function runTranscript(argv) {
   }
 }
 
+async function runChatSummary(argv) {
+  let rest = argv;
+  let resolved;
+  if (hasFlag(argv, "--search") || hasFlag(argv, "--query")) {
+    resolved = await resolveConversationFromSearch(argv, { limit: Number(getFlag(argv, "--limit", 10)) || 10 });
+  } else {
+    const split = splitSelectorArg(argv, "chat-summary");
+    rest = split.rest;
+    resolved = await resolveConversationSelector(split.selector, { limit: Number(getFlag(rest, "--limit", 30)) || 30, argv: rest });
+  }
+  const history = await fetchConversation(loadLocalHeaders(), resolved.conversationId);
+  const summary = conversationSummary(history, resolved.conversationId, {
+    maxMessages: Number(getFlag(rest, "--max-messages", 8)) || 8,
+    maxChars: Number(getFlag(rest, "--max-chars", 900)) || 900,
+  });
+  if (hasFlag(rest, "--json") || hasFlag(rest, "--detailed")) {
+    console.log(JSON.stringify(summary, null, 2));
+  } else {
+    console.log(formatConversationSummary(summary));
+  }
+}
+
 async function runProjectInstructions(argv) {
   const projectId = scopeProjectId(argv) || projectIdFromUrl();
   if (!projectId) throw new Error("No ChatGPT Project ID configured. Run `npm run setup` first.");
@@ -1379,6 +1460,11 @@ async function main() {
 
     if (command === "transcript") {
       await runTranscript(argv);
+      return;
+    }
+
+    if (command === "chat-summary") {
+      await runChatSummary(argv);
       return;
     }
 

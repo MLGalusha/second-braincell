@@ -52,6 +52,15 @@ npm run search-chats -- "observability roadmap"
 npm run search-chats -- --all "observability roadmap"
 ```
 
+For simple questions about what an old chat was about, fetch a lightweight local summary instead of exporting Markdown:
+
+```bash
+npm run chat-summary -- --search "observability roadmap"
+npm run chat-summary -- --all --search "observability roadmap"
+```
+
+Use `chat-summary` when the user asks to find, identify, or briefly explain a prior chat. Use `transcript` only when the user asks to export the chat, quote/review the full conversation, or discuss the old chat in depth with Codex.
+
 Read or update the configured ChatGPT Project instructions:
 
 ```bash

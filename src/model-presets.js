@@ -152,6 +152,9 @@ export function capabilities() {
       transcript: {
         description: "Export a ChatGPT conversation to Markdown by recent-chat number, conversation id, job id, or --search.",
       },
+      "chat-summary": {
+        description: "Fetch a ChatGPT conversation by recent-chat number, conversation id, job id, or --search and print a concise local summary without exporting Markdown.",
+      },
       status: {
         description: "Refresh and print a job record.",
       },

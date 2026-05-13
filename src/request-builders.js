@@ -50,6 +50,8 @@ export function buildConversationBody({
   attachments = [],
   systemHints = [],
   extraMetadata = {},
+  conversationId,
+  parentMessageId,
 } = {}) {
   if (!prompt) throw new Error("A prompt is required.");
   const projectId = projectIdFromProjectUrl(projectUrl);
@@ -68,7 +70,7 @@ export function buildConversationBody({
         metadata: baseMetadata({ attachments, systemHints, extraMetadata }),
       },
     ],
-    parent_message_id: "client-created-root",
+    parent_message_id: parentMessageId || "client-created-root",
     model,
     client_prepare_state: "sent",
     timezone_offset_min: new Date().getTimezoneOffset(),
@@ -85,6 +87,7 @@ export function buildConversationBody({
     paragen_cot_summary_display_override: "allow",
     force_parallel_switch: "auto",
   };
+  if (conversationId) body.conversation_id = conversationId;
   if (thinkingEffort) body.thinking_effort = thinkingEffort;
   return body;
 }

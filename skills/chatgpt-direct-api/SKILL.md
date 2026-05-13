@@ -33,6 +33,18 @@ Send a text prompt:
 npm run ask -- --prompt "..."
 ```
 
+Continue the same ChatGPT conversation:
+
+```bash
+npm run ask -- --prompt "First message."
+npm run ask -- --continue-job <previous-job-id> --prompt "Follow-up message."
+npm run ask -- --continue-job <latest-job-id> --prompt "Another follow-up."
+```
+
+Use the most recent returned job id for each follow-up. The runner reuses the stored `conversation_id` and fetches the latest parent message id from ChatGPT before sending. If you already have a ChatGPT conversation id, use `--conversation-id <id>`; if you also know the exact parent node, use `--parent-message-id <id>`.
+
+When asked to "chat back and forth with ChatGPT", "have a conversation", "send a follow-up", or otherwise continue context, always use `--continue-job` after the first request. Do not simulate continuity by pasting a transcript into a new prompt, and do not put labels like `Codex:` and `ChatGPT:` into a new prompt as a substitute for threading.
+
 Ask about a file:
 
 ```bash

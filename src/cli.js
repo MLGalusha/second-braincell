@@ -75,6 +75,9 @@ Options:
   --kind message|image|deep-research
   --quality high|instant
   --attach-file PATH (repeatable)
+  --continue-job JOB_ID
+  --conversation-id CONVERSATION_ID
+  --parent-message-id MESSAGE_ID
   --sync
   --watch
   --notify
@@ -170,6 +173,9 @@ async function runDirectApiMessage(argv) {
   const curlPath = getFlag(argv, "--curl", undefined);
   const model = getFlag(argv, "--model", undefined);
   const thinkingEffort = getFlag(argv, "--thinking-effort", undefined);
+  const continueJobId = getFlag(argv, "--continue-job", undefined);
+  let conversationId = getFlag(argv, "--conversation-id", undefined);
+  const parentMessageId = getFlag(argv, "--parent-message-id", undefined);
   const modelPreset = getFlag(argv, "--model-preset", undefined);
   const outputKind = getFlag(argv, "--output-kind", "text");
   const jobKind = getFlag(argv, "--job-kind", outputKind === "image" ? "api-image" : "api-message");
@@ -183,10 +189,30 @@ async function runDirectApiMessage(argv) {
   const { job } = createJob({
     kind: jobKind,
     prompt,
-    options: { curlPath, model, thinkingEffort, modelPreset, outputKind, jobKind, kind, quality, attachFiles, watchIntervalSeconds, watchTimeoutSeconds },
+    options: {
+      curlPath,
+      model,
+      thinkingEffort,
+      continueJobId,
+      conversationId: conversationId ? ":conversation_id" : undefined,
+      parentMessageId: parentMessageId ? ":parent_message_id" : undefined,
+      modelPreset,
+      outputKind,
+      jobKind,
+      kind,
+      quality,
+      attachFiles,
+      watchIntervalSeconds,
+      watchTimeoutSeconds,
+    },
   });
 
   try {
+    if (continueJobId) {
+      const previousJob = loadJob(continueJobId);
+      if (!previousJob.conversationId) throw new Error(`Job ${continueJobId} has no conversation id to continue.`);
+      conversationId = previousJob.conversationId;
+    }
     const headers = curlPath ? loadCurlTemplate(curlPath).headers : loadLocalHeaders();
     const attachments = [];
     for (const file of attachFiles) {
@@ -208,6 +234,8 @@ async function runDirectApiMessage(argv) {
       model,
       thinkingEffort,
       attachments,
+      conversationId,
+      parentMessageId,
       fetchFinalText: outputKind !== "image" && kind !== "deep-research",
       forceFetchFinalText: outputKind !== "image" && kind !== "deep-research" && !isAsync,
       submitOnly: isAsync,

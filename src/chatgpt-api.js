@@ -47,7 +47,7 @@ export function loadCurlTemplate(path = DEFAULT_API_CURL_PATH) {
   return parsed;
 }
 
-export function prepareMessageBody(body, prompt, { model, thinkingEffort, attachments = [] } = {}) {
+export function prepareMessageBody(body, prompt, { model, thinkingEffort, attachments = [], conversationId, parentMessageId } = {}) {
   const next = structuredClone(body);
   const message = next.messages?.[0];
   if (!message) throw new Error("Captured send body has no messages[0].");
@@ -71,6 +71,8 @@ export function prepareMessageBody(body, prompt, { model, thinkingEffort, attach
 
   if (model) next.model = model;
   if (thinkingEffort) next.thinking_effort = thinkingEffort;
+  if (conversationId) next.conversation_id = conversationId;
+  if (parentMessageId) next.parent_message_id = parentMessageId;
   next.timezone = next.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
   next.timezone_offset_min = new Date().getTimezoneOffset();
   return next;
@@ -340,6 +342,18 @@ export async function fetchConversation(headers, conversationId) {
   }).then((response) => response.json());
 }
 
+export function latestConversationNodeId(history) {
+  if (typeof history?.current_node === "string" && history.current_node) return history.current_node;
+  const mapping = history?.mapping || {};
+  const leaf = Object.entries(mapping).find(([, node]) => Array.isArray(node?.children) && node.children.length === 0);
+  if (leaf?.[0]) return leaf[0];
+  const messages = Object.entries(mapping)
+    .map(([id, node]) => ({ id, message: node?.message }))
+    .filter(({ message }) => message?.id || message?.author?.role)
+    .sort((a, b) => (a.message?.create_time || 0) - (b.message?.create_time || 0));
+  return messages.at(-1)?.id || null;
+}
+
 export function latestAssistantTextFromConversation(history) {
   const messages = Object.values(history.mapping || {})
     .map((node) => node?.message)
@@ -427,6 +441,8 @@ export async function sendApiMessage({
   model,
   thinkingEffort,
   attachments = [],
+  conversationId,
+  parentMessageId,
   fetchFinalText = true,
   forceFetchFinalText = false,
   kind = "message",
@@ -438,6 +454,11 @@ export async function sendApiMessage({
   const template = curlPath ? loadCurlTemplate(curlPath) : null;
   const headers = template ? template.headers : loadLocalHeaders();
   const url = template ? template.url : localConfig.conversationEndpoint || "https://chatgpt.com/backend-api/f/conversation";
+  if (conversationId && !parentMessageId) {
+    const history = await fetchConversation(headers, conversationId);
+    parentMessageId = latestConversationNodeId(history);
+    if (!parentMessageId) throw new Error(`Could not find latest message id for conversation ${conversationId}.`);
+  }
   const body = localConfig?.projectUrl
     ? bodyForKind({
         kind,
@@ -447,8 +468,10 @@ export async function sendApiMessage({
         model,
         thinkingEffort,
         attachments,
+        conversationId,
+        parentMessageId,
       })
-    : prepareMessageBody(JSON.parse(template.bodyRaw), prompt, { model, thinkingEffort, attachments });
+    : prepareMessageBody(JSON.parse(template.bodyRaw), prompt, { model, thinkingEffort, attachments, conversationId, parentMessageId });
   const response = await fetch(url, {
     method: "POST",
     headers: {

@@ -49,7 +49,7 @@ function setupSteps(steps, start = 1) {
 }
 
 async function waitForClipboard(label) {
-  const prompt = color("1;33", `Copy ${label}, then press Enter. No need to paste. `);
+  const prompt = color("1;33", `After copying the ${label}, press Enter. No need to paste. `);
   await promptSetupValue(prompt);
   return readClipboard();
 }
@@ -326,18 +326,18 @@ async function runSetup(argv) {
     setupTitle("Copy one authenticated Project cURL");
     setupSteps([
       "Open ChatGPT and create a Project named `Codex` if you do not already have one.",
-      "Before creating a new Project, click the settings button and set Project memory to project-only. This cannot be changed after the Project is created.",
+      "Before creating a new Project, click the settings button and set Project memory to project-only.",
       "Open the ChatGPT Project in the browser.",
       "Right-click the ChatGPT page and click Inspect.",
       "In DevTools, click the Network tab.",
       "Click the clear network log button in the top-left of Network: ⊘",
       "Click the Network filter box directly below that clear button.",
-      `Paste this filter into that box: ${SETUP_FILTER}`,
+      `Type this filter into that box: ${SETUP_FILTER}`,
       "While the Network tab is open, go back to your ChatGPT Project and send a message.",
       "A request named `conversation` should appear in the Network table. Its icon is an orange square with <> inside it.",
       "Right-click the `conversation` request and choose Copy > Copy as cURL.",
     ]);
-    curlText = await waitForClipboard("Copy as cURL");
+    curlText = await waitForClipboard("cURL");
   }
   if (!curlText && !process.stdin.isTTY) curlText = readFileSync(0, "utf8");
   const status = writeLocalSetup({ projectUrl, curlText });
@@ -467,7 +467,7 @@ async function runDirectApiMessage(argv, { silent = false } = {}) {
     job.options.model = model;
     job.options.thinkingEffort = thinkingEffort;
     job.options.modelPreset = modelPreset;
-    job.status = isAuthExpiredResult(result) ? "needs_setup" : result.ok && !result.errorSeen ? (isAsync ? "submitted" : "completed") : "failed";
+    job.status = isAuthExpiredResult(result) ? "needs_connect" : result.ok && !result.errorSeen ? (isAsync ? "submitted" : "completed") : "failed";
     job.statusCode = result.status;
     job.contentType = result.contentType;
     job.conversationId = result.conversationId;
@@ -518,7 +518,7 @@ async function runDirectApiMessage(argv, { silent = false } = {}) {
             intervalSeconds: kind === "image" ? 30 : 600,
             rrule: kind === "image" ? "FREQ=SECONDLY;INTERVAL=30" : "FREQ=MINUTELY;INTERVAL=10",
             name: kind === "image" ? "Check ChatGPT image job" : "Check ChatGPT Deep Research job",
-            prompt: `In /Users/masongalusha/Workspace/projects/second-braincell, check Second Braincell job ${job.id} with npm run status -- ${job.id}. If it is complete, report the artifact path and render the image/report when possible. If it is still waiting, check again later without extra commentary.`,
+            prompt: `In ${ROOT_DIR}, check Second Braincell job ${job.id} with npm run status -- ${job.id}. If it is complete, report the artifact path and render the image/report when possible. If it is still waiting, check again later without extra commentary.`,
           }
         : undefined,
     };
@@ -526,7 +526,7 @@ async function runDirectApiMessage(argv, { silent = false } = {}) {
     return payload;
   } catch (error) {
     if (error?.code === "CHATGPT_AUTH_EXPIRED") {
-      job.status = "needs_setup";
+      job.status = "needs_connect";
       job.message = authRefreshMessage();
     } else {
       job.status = "failed";
@@ -1514,7 +1514,7 @@ async function main() {
       } catch (error) {
         if (error?.code !== "CHATGPT_AUTH_EXPIRED") throw error;
         job = updateJob(existingJob, {
-          status: "needs_setup",
+          status: "needs_connect",
           message: authRefreshMessage(),
           error: String(error.stack || error.message || error),
         });

@@ -25,9 +25,9 @@ If connection is missing, ask the user to run:
 npm run connect
 ```
 
-Connect is clipboard-based. Tell the user to create a new ChatGPT Project named `Codex`, click the settings button before creating it, and set Project memory to project-only because this cannot be changed after creation. Then they should open that Project, right-click the ChatGPT page, click Inspect, open DevTools Network, clear the network log button in the top-left of Network (`⊘`), click the Network filter box directly below it, type `conversation`, send a short Project message, right-click the `conversation` request with the orange square `<>` icon, choose Copy > Copy as cURL, and press Enter in connect. There is no need to paste into the terminal; connect reads from the clipboard and ignores typed or pasted prompt input. The runner stores extracted headers in `.local/auth.json` and the extracted Project ID in `.local/config.json`.
+Connect is clipboard-based. Tell the user to create a new ChatGPT Project named `Codex`, click the settings button before creating it, and set Project memory to project-only. Then they should open that Project, right-click the ChatGPT page, click Inspect, open DevTools Network, clear the network log button in the top-left of Network (`⊘`), click the Network filter box directly below it, type `conversation`, send a short Project message, right-click the `conversation` request with the orange square `<>` icon, choose Copy > Copy as cURL, and press Enter in connect. There is no need to paste into the terminal; connect reads from the clipboard and ignores typed or pasted prompt input. The runner stores extracted headers in `.local/auth.json` and the extracted Project ID in `.local/config.json`.
 
-If a command returns `needs_setup` or says the ChatGPT session credentials expired, ask the user to run `npm run connect` again and copy a fresh authenticated Project conversation cURL.
+If a command returns `needs_connect` or says the ChatGPT session credentials expired, ask the user to run `npm run connect` again and copy a fresh authenticated Project conversation cURL.
 
 ## Commands
 
@@ -106,7 +106,7 @@ When having a multi-message conversation with ChatGPT, send natural user-facing 
 Avoid prompts like:
 
 ```text
-I'm Codex, acting on behalf of Mason. Let's have a brief three-turn conversation. Turn 1: pick a practical software/product topic...
+I'm Codex, acting on behalf of Bob. Let's have a brief three-turn conversation. Turn 1: pick a practical software/product topic...
 Turn 2: We see the usual problem...
 ```
 

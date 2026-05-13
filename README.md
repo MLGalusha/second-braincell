@@ -2,7 +2,7 @@
 
 Give your Codex agent a second braincell: a local path into your own ChatGPT Project for conversations, research, files, images, and model responses.
 
-Second Braincell lets Codex use ChatGPT as a real second workspace. Your agent can ask ChatGPT for a one-off answer, keep a multi-turn conversation open, hand off a Deep Research report, generate images, ask questions about uploaded files and PDFs, search and resume previous chats, export transcripts, or update the configured Project instructions.
+Second Braincell lets Codex use ChatGPT as a real second workspace. Your agent can ask ChatGPT for a one-off answer, keep a multi-turn conversation open, hand off a Deep Research report, generate images, ask questions about uploaded files and PDFs, search and resume previous chats, or update the configured Project instructions.
 
 ## What You Can Do
 
@@ -10,13 +10,13 @@ Use Second Braincell when you want Codex to:
 
 - **Ask ChatGPT for a second opinion:** architecture reviews, product tradeoffs, debugging plans, research summaries, naming ideas, or concise explanations.
 - **Run real conversations:** keep a ChatGPT thread open across turns, continue from a local job id, or resume a previous ChatGPT conversation.
-- **Search and export chat history:** list recent Project chats, search the configured Project, resume the right thread, or export a Markdown transcript.
-- **Use ChatGPT's file handling:** upload PDFs and documents through ChatGPT's own file flow, then ask questions about them.
+- **Use previous ChatGPT work:** search past ChatGPT chats, find the thread where you already discussed a topic, resume that conversation, or export the chat as Markdown for Codex to read.
+- **Use ChatGPT's file retrieval:** upload PDFs and documents through ChatGPT's file flow and use its built-in retrieval instead of spending Codex tokens searching manually.
 - **Create images:** submit high-quality or instant image-generation jobs and save the resulting image locally.
 - **Run Deep Research:** start a Deep Research job, let it continue asynchronously, and collect the final report under `output/`.
 - **Tune the Project itself:** read, back up, preview, update, or clear the configured ChatGPT Project instructions.
 
-The point is not just to get another model response. The point is to give Codex a fast, local, agent-friendly way to use the ChatGPT product experience you already have configured: Project instructions, Project-scoped chats, uploaded files, image generation, Deep Research, and transcripts.
+The point is not just to get another model response. The point is to give Codex a fast, local, agent-friendly way to use the ChatGPT product experience you already have configured: Project instructions, Project-scoped chats, uploaded files, image generation, Deep Research, and chat exports.
 
 ## Why This Is Useful
 
@@ -27,10 +27,11 @@ Browser automation tools can do a similar handoff by opening ChatGPT, pasting pr
 That shape gives it a different set of tradeoffs:
 
 - **No browser driving:** no Playwright flow, DOM selectors, model-picker clicking, paste races, or tab reattach loop for normal text requests.
-- **Project-native conversations:** requests land in the configured ChatGPT Project, so Project instructions, Project memory settings, chat history, search, resume, and transcript export all matter.
+- **Project-native conversations:** requests land in the configured ChatGPT Project, so Project instructions, Project memory settings, chat history, search, resume, and chat export all matter.
 - **ChatGPT-native files:** PDFs and files use ChatGPT's upload and processing flow instead of only pasting file text into a prompt.
-- **Agent-friendly output:** jobs, transcripts, images, reports, and status files are written locally under ignored `output/` paths.
-- **Simple setup:** one Project URL and one authenticated ChatGPT cURL provide the local configuration; the copied cURL supplies auth headers, not a request template.
+- **Agent-friendly output:** jobs, chat exports, images, reports, and status files are written locally under ignored `output/` paths.
+- **Simple connection:** one authenticated ChatGPT Project cURL provides the local configuration; `connect` extracts both auth headers and the Project ID.
+- **Easy reconnect:** if the ChatGPT web session expires, jobs fail with `needs_connect` and tell the agent to run `npm run connect` again.
 
 Second Braincell is intentionally smaller than a general model router. It does not try to support every model provider, fan out to multiple APIs, or become a replacement for dedicated prompt-bundling tools. It focuses on one job: give Codex a practical local path into your ChatGPT Project.
 
@@ -38,10 +39,10 @@ Second Braincell is intentionally smaller than a general model router. It does n
 
 Second Braincell is a local Node.js CLI that your Codex agent can call with `npm run converse` for normal text conversations and `npm run ask` for lower-level jobs.
 
-Setup captures two local-only pieces of information:
+`npm run connect` captures two local-only pieces of information from one copied Project `conversation` cURL:
 
-- your ChatGPT Project URL
-- auth headers extracted from one authenticated `chatgpt.com` cURL copied from DevTools
+- your ChatGPT Project ID
+- auth headers from your signed-in `chatgpt.com` session
 
 Those are stored in ignored files:
 
@@ -49,6 +50,23 @@ Those are stored in ignored files:
 - `.local/auth.json`
 
 The copied cURL is not used as a request template. It only provides auth headers. The source code in this repo builds the actual request bodies for messages, images, Deep Research, and file attachments.
+
+If the copied ChatGPT session expires later, reconnecting is the same flow: run `npm run connect`, copy a fresh Project `conversation` cURL, and continue using the same configured Project.
+
+## Security Model
+
+Second Braincell does not use an OpenAI API key. It uses auth headers from your signed-in ChatGPT web session.
+
+That is convenient, but it is also the biggest risk in this project. A copied ChatGPT cURL, `.local/auth.json`, browser HAR, or raw auth header can contain live session credentials. Anyone who gets those credentials may be able to use your ChatGPT account as you until the session is invalidated or expires. Treat these values like active browser login credentials, not like harmless setup snippets.
+
+This means:
+
+- Do not paste cURLs, cookies, auth headers, HAR files, `.local/auth.json`, or generated job output into issues, pull requests, chat logs, docs, screenshots, or support requests.
+- Do not run this in shared workspaces, public sandboxes, CI, remote dev containers, or machines where other users can read your files.
+- Do not give untrusted agents or scripts access to this repo after connecting, because local access to `.local/auth.json` is enough to send authenticated ChatGPT requests.
+- Prefer a dedicated ChatGPT Project for Second Braincell, with Project memory set to project-only before creation.
+- Review generated `output/` files before sharing anything from them. Chat exports, reports, images, job JSON, and file answers can contain private prompts, account-derived data, signed URLs, file ids, or conversation content.
+- If you suspect a leak, assume session compromise. In ChatGPT, use `Settings > Security > Log out all`, change your password if account access may be compromised, enable MFA if available, delete the leaked local files, remove leaked artifacts from any public place, and contact OpenAI support if you see suspicious activity or cannot regain control.
 
 When Codex asks Second Braincell to do something, the runner:
 
@@ -66,17 +84,19 @@ For file and PDF questions, the runner uses ChatGPT's upload flow: create the fi
 git clone https://github.com/MLGalusha/second-braincell.git
 cd second-braincell
 npm install
-npm run setup
+npm run connect
 ```
 
-`npm run setup` is interactive and clipboard-based. It walks you through:
+`npm run connect` is interactive and clipboard-based. It walks you through:
 
 - creating a ChatGPT Project named `Codex`
 - setting Project memory to project-only before the Project is created
-- copying the Project URL
-- copying one authenticated `/backend-api/f/conversation` cURL from DevTools
+- opening DevTools Network and filtering by `conversation`
+- copying one authenticated Project `conversation` request as cURL
 
-No need to paste copied values into the terminal. Setup reads from your clipboard after you press Enter, and anything typed or pasted at the setup prompts is ignored.
+No need to paste the copied cURL into the terminal. Connect reads from your clipboard after you press Enter, and anything typed or pasted at the prompt is ignored.
+
+If ChatGPT signs you out or the copied session expires, commands fail with a `needs_connect` job status and tell you to run `npm run connect` again. Reconnecting refreshes `.local/auth.json` while keeping the configured Project ID in `.local/config.json`.
 
 Check readiness:
 
@@ -84,7 +104,7 @@ Check readiness:
 npm run capabilities
 ```
 
-This prints a clean setup and feature summary. For the full debug JSON, run:
+This prints a clean connection and feature summary. For the full debug JSON, run:
 
 ```bash
 npm run capabilities -- --detailed
@@ -94,13 +114,14 @@ Check which ChatGPT models are available to the signed-in account:
 
 ```bash
 npm run model-check
+npm run model-check -- --model pro
 ```
 
-This writes ignored local results to `.local/model-capabilities.json`. The `best` model alias uses that cache.
+This writes ignored local results to `.local/model-capabilities.json`. The `best` model alias uses that cache to choose the strongest available checked model.
 
 ## Use It From Codex
 
-After setup is complete, go to your Codex agent and tell it:
+After connect is complete, go to your Codex agent and tell it:
 
 ```text
 Read and follow skills/chatgpt-direct-api/SKILL.md.
@@ -114,14 +135,12 @@ If your agent supports installing repo skills, install the skill from `skills/ch
 When asking your agent to use Second Braincell, describe the conversation or task naturally:
 
 ```text
-Use Second Braincell to have a conversation with ChatGPT about whether we should split this service.
+Use Second Braincell to ask ChatGPT whether we should split this service. Have it compare keeping billing, notifications, and background jobs together versus separating them, then bring back the strongest recommendation, migration risks, and the first reversible step.
 ```
 
 ```text
-Ask ChatGPT to brainstorm three product directions, challenge the weakest assumptions, and bring back the transcript.
+Use Second Braincell to ask ChatGPT for three product directions for Bob's field-service app. Have it challenge the weakest assumption behind each direction, rank them by expected learning per week, and bring back a concise transcript.
 ```
-
-The agent should send ChatGPT natural messages, not meta prompts with labels like `Turn 1`, `Turn 2`, `Codex:`, or `acting on behalf of`. Conversation continuity is handled by `converse` or `--continue-job`, not by encoding the mechanics into the prompt text.
 
 ## Personalize The ChatGPT Project
 
@@ -154,6 +173,62 @@ Keep each section short.
 
 This makes Second Braincell more useful than a generic ChatGPT call: your Codex agent can use a Project that already knows the role, tone, and decision style you want.
 
+## Output
+
+- Text and Deep Research: `output/jobs/<job-id>/response.md`
+- Conversation transcripts: `output/conversations/<name>.md`
+- Project instruction backups: `output/project-instructions/<project-id>_<timestamp>.md`
+- Images: `output/images/<job-id>.png`
+- Job metadata: `output/jobs/<job-id>/job.json`
+- Watcher status: `output/jobs/<job-id>/watch-status.json`
+
+`output/` is ignored by git.
+
+## Models
+
+By default, text requests use ChatGPT's `auto` model mode:
+
+```bash
+npm run ask -- --prompt "..."
+```
+
+Use a specific model when you want a specific tradeoff:
+
+```bash
+npm run ask -- --model auto --prompt "..."
+npm run ask -- --model instant --prompt "..."
+npm run ask -- --model thinking --reasoning standard --prompt "..."
+npm run ask -- --model thinking --reasoning extended --prompt "..."
+npm run ask -- --model pro --reasoning standard --prompt "..."
+npm run ask -- --model pro --reasoning extended --prompt "..."
+npm run ask -- --model 5.3 --prompt "..."
+npm run ask -- --model best --prompt "..."
+```
+
+| Model      | Internal value                        | Reasoning                  | Use                                                         |
+| ---------- | ------------------------------------- | -------------------------- | ----------------------------------------------------------- |
+| `auto`     | `auto`                                | none                       | Default ChatGPT model selection.                            |
+| `instant`  | `gpt-5-5`                             | none                       | Fast GPT-5.5 responses.                                     |
+| `thinking` | `gpt-5-5-thinking`                    | `standard`, `extended`     | Stronger reasoning.                                         |
+| `pro`      | `gpt-5-5-pro`                         | `standard`, `extended`     | Highest reasoning, when available to the signed-in account. |
+| `5.3`      | `gpt-5-3`                             | none                       | Stable legacy fallback.                                     |
+| `best`     | from `.local/model-capabilities.json` | starts with `pro extended` | Best available checked model.                               |
+
+Run `npm run model-check` after connecting, after changing ChatGPT accounts, or after upgrading/downgrading a plan. Use `npm run model-check -- --model pro` when you only want to verify GPT-5.5 Pro access.
+
+If you explicitly request `--model pro` and the signed-in account cannot use GPT-5.5 Pro, the command fails clearly, updates `.local/model-capabilities.json`, and suggests `--model thinking --reasoning extended`. It does not silently fall back.
+
+Use `--model best` when automatic fallback is desired. `best` starts with the cached best model and, if that model is unavailable during the request, tries the next model in this order:
+
+1. `pro --reasoning extended`
+2. `thinking --reasoning extended`
+3. `thinking --reasoning standard`
+4. `instant`
+5. `5.3`
+6. `auto`
+
+Invalid model and reasoning combinations fail before sending. `thinking` currently exposes only `standard` and `extended`; local endpoint tests returned HTTP 422 for `light` and `heavy`.
+
 ## Commands
 
 Default text chat and conversations:
@@ -180,6 +255,15 @@ Search ChatGPT chats with ChatGPT's native search:
 npm run search-chats -- "observability roadmap"
 npm run search-chats -- --all "observability roadmap"
 ```
+
+Summarize a prior ChatGPT chat without exporting a Markdown file:
+
+```bash
+npm run chat-summary -- --search "observability roadmap"
+npm run chat-summary -- --all --search "observability roadmap"
+```
+
+Use `chat-summary` for quick questions about what an old chat covered. Use `transcript` when you want a Markdown export or when Codex needs the full conversation to discuss in depth.
 
 Resume a previous ChatGPT Project chat by recent-chat number, conversation id, local job id, or search result:
 
@@ -278,54 +362,23 @@ npm run chatgpt -- jobs
 
 Text chat is synchronous by default. Image generation and Deep Research are async by default: they submit quickly, create a job under `output/jobs/`, start a watcher, and print the status command plus watcher status path. Agents should treat these async jobs as fire-and-forget: submit the job, create a thread heartbeat automation when available, report the job id/status path if useful, then stop or continue with other work. Creating the heartbeat is required in Codex sessions with automation support. Image jobs use a 30-second heartbeat; Deep Research jobs use a 10-minute heartbeat. Use `--sync` for image or Deep Research only when you want the initial command to wait, and only poll manually when progress or retrieval is explicitly requested.
 
-## Output
-
-- Text and Deep Research: `output/jobs/<job-id>/response.md`
-- Conversation transcripts: `output/conversations/<name>.md`
-- Project instruction backups: `output/project-instructions/<project-id>_<timestamp>.md`
-- Images: `output/images/<job-id>.png`
-- Job metadata: `output/jobs/<job-id>/job.json`
-- Watcher status: `output/jobs/<job-id>/watch-status.json`
-
-`output/` is ignored by git.
-
-## Models
-
-By default, text requests use ChatGPT's `auto` model mode:
-
-```bash
-npm run ask -- --prompt "..."
-```
-
-Use a specific model when you want a specific tradeoff:
-
-```bash
-npm run ask -- --model auto --prompt "..."
-npm run ask -- --model instant --prompt "..."
-npm run ask -- --model thinking --reasoning standard --prompt "..."
-npm run ask -- --model thinking --reasoning extended --prompt "..."
-npm run ask -- --model pro --reasoning standard --prompt "..."
-npm run ask -- --model pro --reasoning extended --prompt "..."
-npm run ask -- --model 5.3 --prompt "..."
-npm run ask -- --model best --prompt "..."
-```
-
-| Model | Internal value | Reasoning | Use |
-| --- | --- | --- | --- |
-| `auto` | `auto` | none | Default ChatGPT model selection. |
-| `instant` | `gpt-5-5` | none | Fast GPT-5.5 responses. |
-| `thinking` | `gpt-5-5-thinking` | `standard`, `extended` | Stronger reasoning. |
-| `pro` | `gpt-5-5-pro` | `standard`, `extended` | Highest reasoning, when available to the signed-in account. |
-| `5.3` | `gpt-5-3` | none | Stable legacy fallback. |
-| `best` | from `.local/model-capabilities.json` | starts with `pro extended` | Best available checked model. |
-
-Run `npm run model-check` after setup, after changing ChatGPT accounts, or after upgrading/downgrading a plan. If a user explicitly asks for `pro` and it is unavailable, report that clearly instead of silently falling back. Use `best` when automatic fallback is desired.
-
-Invalid model and reasoning combinations fail before sending. `thinking` currently exposes only `standard` and `extended`; local endpoint tests returned HTTP 422 for `light` and `heavy`.
-
 ## Privacy
 
-Never commit or share cookies, auth headers, proof/sentinel tokens, signed URLs, HARs, cURLs, `.env`, `.local/`, or generated `output/` artifacts. The repo ignores those paths and file types by default.
+Never commit or share cookies, auth headers, proof/sentinel tokens, signed URLs, HARs, cURLs, `.env`, `.local/`, or generated `output/` artifacts. The repo ignores those paths and file types by default, but git ignore rules do not protect you from manually pasting secrets into docs, issues, terminals, screenshots, or chat messages.
+
+Before making a fork, branch, gist, issue, PR, screenshot, or support bundle public, check for:
+
+- `.local/`
+- `output/`
+- `*.curl`
+- `*.har`
+- `.env`
+- copied request headers
+- `cookie:`, `authorization:`, `oai-`, `__Secure-`, `cf_`, `sentinel`, `proof`, `session`, or signed upload/download URLs
+
+If credentials are committed, deleting the file in a later commit is not enough. Remove the public copy, rotate or invalidate the affected session, and rewrite the exposed git history before making the repository public again.
+
+Before publishing, run your own tracked-file scan and review the files manually. Do not rely on `.gitignore` alone.
 
 ## Responsible Use
 
@@ -337,7 +390,7 @@ Access is still controlled by your ChatGPT account, the ChatGPT product, and wha
 
 Second Braincell was built in a day to solve a real Codex workflow, so expect rough edges. It is a pragmatic local runner around browser-observed ChatGPT web API calls.
 
-Issues, fixes, better setup instructions, new request builders, and reliability improvements are welcome. Please keep contributions careful about privacy: no committed cookies, auth headers, cURLs, HARs, signed URLs, `.local/`, or generated `output/` files.
+Issues, fixes, better connection instructions, new request builders, and reliability improvements are welcome. Please keep contributions careful about privacy: no committed cookies, auth headers, cURLs, HARs, signed URLs, `.local/`, or generated `output/` files.
 
 ## Development
 

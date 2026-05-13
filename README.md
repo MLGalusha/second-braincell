@@ -45,7 +45,7 @@ No need to paste the URL. The setup command reads it from your clipboard after y
 4. Click the clear network log button in the top-left of Network: ⊘
 5. Click the Network filter box directly below that clear button.
 6. Paste this filter into that box: `/backend-api/f/conversation`
-7. Go back to your ChatGPT Project and send a short message, such as `setup test`.
+7. While the Network tab is open, go back to your ChatGPT Project and send a message.
 8. A request named `conversation` should appear in the Network table. Its icon is an orange square with `<>` inside it.
 9. Right-click the `conversation` request.
 10. Choose Copy > Copy as cURL.

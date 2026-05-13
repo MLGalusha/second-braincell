@@ -130,7 +130,7 @@ async function runSetup(argv) {
       "Click the clear network log button in the top-left of Network: ⊘",
       "Click the Network filter box directly below that clear button.",
       `Paste this filter into that box: ${SETUP_FILTER}`,
-      "Go back to your ChatGPT Project and send a short message, such as `setup test`.",
+      "While the Network tab is open, go back to your ChatGPT Project and send a message.",
       "A request named `conversation` should appear in the Network table. Its icon is an orange square with <> inside it.",
       "Right-click the `conversation` request and choose Copy > Copy as cURL.",
     ]);

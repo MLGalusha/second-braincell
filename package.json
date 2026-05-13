@@ -1,7 +1,16 @@
 {
   "name": "second-braincell",
   "version": "1.0.0",
+  "description": "A local ChatGPT sidecar for Codex agents: Deep Research, images, and file RAG through your ChatGPT account.",
   "main": "src/cli.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MLGalusha/second-braincell.git"
+  },
+  "bugs": {
+    "url": "https://github.com/MLGalusha/second-braincell/issues"
+  },
+  "homepage": "https://github.com/MLGalusha/second-braincell#readme",
   "engines": {
     "node": ">=18"
   },
@@ -35,6 +44,5 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "A local ChatGPT sidecar for Codex agents: Deep Research, images, and file RAG through your ChatGPT account.",
   "type": "module"
 }

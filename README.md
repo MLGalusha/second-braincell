@@ -127,7 +127,7 @@ After connect is complete, go to your Codex agent and tell it:
 
 ```text
 Read and follow skills/chatgpt-direct-api/SKILL.md.
-Use Second Braincell to ask ChatGPT: Reply with exactly: agent works
+Ask ChatGPT: Reply with exactly: agent works
 ```
 
 If your agent supports installing repo skills, install the skill from `skills/chatgpt-direct-api/SKILL.md`. Otherwise, telling the agent to read that file is enough.
@@ -137,11 +137,11 @@ If your agent supports installing repo skills, install the skill from `skills/ch
 When asking your agent to use Second Braincell, describe the conversation or task naturally:
 
 ```text
-Use Second Braincell to ask ChatGPT whether we should split this service. Have it compare keeping billing, notifications, and background jobs together versus separating them, then bring back the strongest recommendation, migration risks, and the first reversible step.
+Ask ChatGPT whether we should split this service. Have it compare keeping billing, notifications, and background jobs together versus separating them, then bring back the strongest recommendation, migration risks, and the first reversible step.
 ```
 
 ```text
-Use Second Braincell to ask ChatGPT for three product directions for Bob's field-service app. Have it challenge the weakest assumption behind each direction, rank them by expected learning per week, and bring back a concise transcript.
+Ask ChatGPT for three product directions for Bob's field-service app. Have it challenge the weakest assumption behind each direction, rank them by expected learning per week, and bring back a concise transcript.
 ```
 
 ## Personalize The ChatGPT Project
@@ -393,6 +393,10 @@ Access is still controlled by your ChatGPT account, the ChatGPT product, and wha
 Second Braincell was built in a day to solve a real Codex workflow, so expect rough edges. It is a pragmatic local runner around browser-observed ChatGPT web API calls.
 
 Issues, fixes, better connection instructions, new request builders, and reliability improvements are welcome. Please keep contributions careful about privacy: no committed cookies, auth headers, cURLs, HARs, signed URLs, `.local/`, or generated `output/` files.
+
+## License
+
+Second Braincell is released under the ISC License. This license applies to the project source code, not to ChatGPT, OpenAI services, or any terms that may apply to your use of those services.
 
 ## Development
 

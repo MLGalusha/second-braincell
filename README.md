@@ -42,8 +42,8 @@ For file and PDF questions, the runner uses ChatGPT's upload flow: create the fi
 ## Quick Start
 
 ```bash
-git clone https://github.com/MLGalusha/chatgpt-project-runner.git
-cd chatgpt-project-runner
+git clone https://github.com/MLGalusha/second-braincell.git
+cd second-braincell
 npm install
 npm run setup
 ```

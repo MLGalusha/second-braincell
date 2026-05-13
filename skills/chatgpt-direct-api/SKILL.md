@@ -23,7 +23,7 @@ If setup is missing, ask the user to run:
 npm run setup
 ```
 
-Setup is clipboard-based. Tell the user to create a new ChatGPT Project named `Codex`, click the settings button before creating it, and set Project memory to project-only because this cannot be changed after creation. Then they should copy the Project URL and press Enter. For the cURL, tell them to right-click the ChatGPT page, click Inspect, open DevTools Network, clear the network log, paste `/backend-api/f/conversation` into the Network filter box, send a short Project message, right-click the `conversation` request, choose Copy > Copy as cURL, and press Enter in setup. They should not paste the cURL into the terminal because DevTools cURLs can be multiline. The runner stores extracted headers in `.local/auth.json` and the project URL in `.local/config.json`.
+Setup is clipboard-based. Tell the user to create a new ChatGPT Project named `Codex`, click the settings button before creating it, and set Project memory to project-only because this cannot be changed after creation. Then they should copy the Project URL and press Enter. For the cURL, tell them to right-click the ChatGPT page, click Inspect, open DevTools Network, clear the network log, paste `/backend-api/f/conversation` into the Network filter box, send a short Project message, right-click the `conversation` request, choose Copy > Copy as cURL, and press Enter in setup. There is no need to paste into the terminal; setup reads from the clipboard and ignores typed or pasted prompt input. The runner stores extracted headers in `.local/auth.json` and the project URL in `.local/config.json`.
 
 ## Commands
 

@@ -17,7 +17,7 @@ Run setup:
 npm run setup
 ```
 
-The interactive setup is clipboard-based. You copy each item, then press Enter in the terminal. Do not paste the copied value into the terminal.
+The interactive setup is clipboard-based. Copy each item, then press Enter in the terminal. No need to paste. Anything typed or pasted at the setup prompts is ignored.
 
 ### Step 1: Create The ChatGPT Project
 
@@ -35,7 +35,7 @@ The interactive setup is clipboard-based. You copy each item, then press Enter i
 3. Go back to the terminal.
 4. Press Enter when setup asks for the Project URL.
 
-Do not paste the URL. The setup command reads it from your clipboard.
+No need to paste the URL. The setup command reads it from your clipboard after you press Enter.
 
 ### Step 3: Copy One Authenticated cURL
 
@@ -56,7 +56,7 @@ Do not paste the URL. The setup command reads it from your clipboard.
 10. Go back to the terminal.
 11. Press Enter when setup asks for the authenticated cURL.
 
-Do not paste the cURL. DevTools cURLs are often multiline and can break terminal input. The setup command reads the copied cURL from your clipboard.
+No need to paste the cURL. DevTools cURLs are often multiline, so the setup command reads the copied cURL from your clipboard after you press Enter.
 
 Setup writes ignored local files:
 

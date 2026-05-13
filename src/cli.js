@@ -49,7 +49,7 @@ function setupCopyBlock(label, value) {
 }
 
 async function waitForClipboard(label) {
-  const prompt = color("1;33", `Press Enter after copying ${label}. Do not paste it here. `);
+  const prompt = color("1;33", `Copy ${label}, then press Enter. No need to paste. `);
   await promptSetupValue(prompt);
   return readClipboard();
 }
@@ -116,7 +116,7 @@ async function runSetup(argv) {
   const interactive = process.stdin.isTTY && !projectUrl && !curlText && !curlFile;
   if (interactive) {
     console.log(color("1", "\nChatGPT Project Runner setup"));
-    console.log("This setup reads copied values from your clipboard. Copy when instructed, then return here and press Enter.");
+    console.log("This setup reads from your clipboard after you press Enter. Anything typed or pasted at these prompts is ignored.");
   }
   if (!projectUrl && process.stdin.isTTY) {
     setupTitle("1. Create the ChatGPT Project");

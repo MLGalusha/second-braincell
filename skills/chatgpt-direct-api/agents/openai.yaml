@@ -1,0 +1,7 @@
+interface:
+  display_name: "Second Braincell"
+  short_description: "Use ChatGPT from Codex"
+  default_prompt: "Use $chatgpt-direct-api to ask ChatGPT for a concise second opinion."
+
+policy:
+  allow_implicit_invocation: true

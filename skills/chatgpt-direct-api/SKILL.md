@@ -25,7 +25,14 @@ Before running commands, resolve the Second Braincell repo root:
 3. Else if this installed skill directory contains `RUNNER_ROOT.txt`, read the repo root from that file.
 4. Else ask the user to run `npm run install-skill` from the cloned Second Braincell repo.
 
-When the runner root differs from the current project, run commands with `npm --prefix "$SBC_ROOT" run <script> -- ...`. For example:
+Prefer the global `sbc` command when it is available:
+
+```bash
+sbc capabilities
+sbc converse --prompt "..."
+```
+
+If `sbc` is not available, and the runner root differs from the current project, run commands with `npm --prefix "$SBC_ROOT" run <script> -- ...`. For example:
 
 ```bash
 npm --prefix "$SBC_ROOT" run capabilities
@@ -37,15 +44,15 @@ npm --prefix "$SBC_ROOT" run converse -- --prompt "..."
 Check setup first:
 
 ```bash
-npm run capabilities
+sbc capabilities
 ```
 
-This prints a human-readable readiness summary. Use `npm run capabilities -- --detailed` when structured debug JSON is needed.
+This prints a human-readable readiness summary. Use `sbc capabilities --detailed` when structured debug JSON is needed.
 
 If connection is missing, ask the user to run:
 
 ```bash
-npm run connect
+sbc connect
 ```
 
 Connect is clipboard-based. Tell the user to create a new ChatGPT Project named `Codex`, click the settings button before creating it, and set Project memory to project-only. Then they should open that Project, right-click the ChatGPT page, click Inspect, open DevTools Network, clear the network log button in the top-left of Network (`⊘`), click the Network filter box directly below it, type `conversation`, send a short Project message, right-click the `conversation` request with the orange square `<>` icon, choose Copy > Copy as cURL, and press Enter in connect. There is no need to paste into the terminal; connect reads from the clipboard and ignores typed or pasted prompt input. The runner stores extracted headers in `.local/auth.json` and the extracted Project ID in `.local/config.json`.
@@ -57,7 +64,7 @@ If a command returns `needs_connect` or says the ChatGPT session credentials exp
 Send a text prompt or start a response-aware conversation:
 
 ```bash
-npm run converse -- --prompt "..."
+sbc converse --prompt "..."
 ```
 
 Use `converse` as the default path for normal text chat, including one-question requests. It prints ChatGPT's response after each turn, keeps a combined transcript under `output/conversations/`, and continues the same ChatGPT thread until you end with a blank prompt, `/end`, `end`, `/done`, or `done`. If `converse` is run non-interactively with `--prompt`, it sends one turn and exits.
@@ -65,7 +72,7 @@ Use `converse` as the default path for normal text chat, including one-question 
 List recent ChatGPT Project chats:
 
 ```bash
-npm run chats
+sbc chats
 ```
 
 Default chat listing and search are scoped to the configured ChatGPT Project. Only use `--all` or another Project when the user explicitly asks to find, inspect, summarize, export, or resume a chat outside the configured Project.
@@ -73,8 +80,8 @@ Default chat listing and search are scoped to the configured ChatGPT Project. On
 Search ChatGPT chats with ChatGPT's native search:
 
 ```bash
-npm run search-chats -- "observability roadmap"
-npm run search-chats -- --all "observability roadmap"
+sbc search-chats "observability roadmap"
+sbc search-chats --all "observability roadmap"
 ```
 
 For simple questions about what an old chat was about, fetch a lightweight local summary instead of exporting Markdown:

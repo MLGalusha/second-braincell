@@ -125,7 +125,7 @@ export function capabilities() {
         description: "Submit a ChatGPT web API job with agent-friendly defaults.",
         defaultAsync: true,
         asyncAgentBehavior:
-          "For image and deep-research jobs, submit, create a thread heartbeat automation when available, then stop or continue with other work. Image jobs require a 30-second heartbeat; deep-research jobs require a 10-minute heartbeat. Do not poll or wait unless explicitly requested.",
+          "For image and deep-research jobs, submit, create a thread heartbeat automation when available, then stop or continue with other work. Image jobs require a 1-minute heartbeat; deep-research jobs require a 10-minute heartbeat. Do not poll or wait unless explicitly requested.",
         kinds: ["message", "image", "deep-research"],
         supportsAttachments: true,
       },

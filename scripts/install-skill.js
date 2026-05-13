@@ -1,24 +1,15 @@
 #!/usr/bin/env node
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const __filename = fileURLToPath(import.meta.url);
-const ROOT_DIR = resolve(dirname(__filename), "..");
-const SOURCE_DIR = resolve(ROOT_DIR, "skills", "chatgpt-direct-api");
+import { defaultSkillTargetDir, ROOT_DIR, SKILL_SOURCE_DIR } from "./paths.js";
 
 function argValue(name) {
   const index = process.argv.indexOf(name);
   return index === -1 ? undefined : process.argv[index + 1];
 }
 
-function codexHome() {
-  return process.env.CODEX_HOME || resolve(homedir(), ".codex");
-}
-
 function targetDir() {
-  return resolve(argValue("--target") || process.env.SECOND_BRAINCELL_SKILL_DIR || resolve(codexHome(), "skills", "chatgpt-direct-api"));
+  return resolve(argValue("--target") || process.env.SECOND_BRAINCELL_SKILL_DIR || defaultSkillTargetDir());
 }
 
 function validateSkill(path) {
@@ -30,26 +21,30 @@ function validateSkill(path) {
   if (!/^description:\s*\S/m.test(text)) throw new Error(`${skillPath} is missing a description.`);
 }
 
-function main() {
-  const destination = targetDir();
-  validateSkill(SOURCE_DIR);
+export function installSkill({ destination = targetDir() } = {}) {
+  validateSkill(SKILL_SOURCE_DIR);
   mkdirSync(dirname(destination), { recursive: true });
   rmSync(destination, { recursive: true, force: true });
-  cpSync(SOURCE_DIR, destination, { recursive: true });
+  cpSync(SKILL_SOURCE_DIR, destination, { recursive: true });
   writeFileSync(resolve(destination, "RUNNER_ROOT.txt"), `${ROOT_DIR}\n`);
   validateSkill(destination);
+  return {
+    installed: true,
+    source: SKILL_SOURCE_DIR,
+    destination,
+    next: "Restart Codex or start a new Codex thread so the global skill metadata is reloaded.",
+  };
+}
+
+function main() {
+  const result = installSkill();
   console.log(
     JSON.stringify(
-      {
-        installed: true,
-        source: SOURCE_DIR,
-        destination,
-        next: "Restart Codex or start a new Codex thread so the global skill metadata is reloaded.",
-      },
+      result,
       null,
       2,
     ),
   );
 }
 
-main();
+if (import.meta.url === `file://${process.argv[1]}`) main();

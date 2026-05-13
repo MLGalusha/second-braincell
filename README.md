@@ -85,7 +85,8 @@ git clone https://github.com/MLGalusha/second-braincell.git
 cd second-braincell
 npm install
 npm run connect
-npm run install-skill
+npm run install-global
+npm run doctor
 ```
 
 `npm run connect` is interactive and clipboard-based. It walks you through:
@@ -134,10 +135,17 @@ Ask ChatGPT: Reply with exactly: agent works
 For use from any local repository, install the global Codex skill:
 
 ```bash
-npm run install-skill
+npm run install-global
 ```
 
-This copies `skills/chatgpt-direct-api/` to `${CODEX_HOME:-~/.codex}/skills/chatgpt-direct-api` and writes a local `RUNNER_ROOT.txt` there so the skill can call this runner from other project folders with `npm --prefix`. Restart Codex or start a new Codex thread after installing so the skill metadata is reloaded. The skill includes trigger metadata, so future requests like “ask ChatGPT with Second Braincell” can load it without you pointing the agent at this repo file.
+This copies `skills/chatgpt-direct-api/` to `${CODEX_HOME:-~/.codex}/skills/chatgpt-direct-api`, writes a local `RUNNER_ROOT.txt` there, and installs an `sbc` command shim at `~/.local/bin/sbc`. Restart Codex or start a new Codex thread after installing so the skill metadata is reloaded. The skill includes trigger metadata and UI metadata, so future requests like “ask ChatGPT with Second Braincell” can load it without you pointing the agent at this repo file.
+
+Check the global setup:
+
+```bash
+npm run doctor
+sbc capabilities
+```
 
 If your agent does not support global skills, telling it to read `skills/chatgpt-direct-api/SKILL.md` still works.
 

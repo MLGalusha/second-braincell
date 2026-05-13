@@ -1,0 +1,26 @@
+{
+  "name": "chatgpt-project-runner",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "chatgpt": "node src/cli.js",
+    "ask": "node src/cli.js ask",
+    "capabilities": "node src/cli.js capabilities",
+    "status": "node src/cli.js status",
+    "verify-api": "node scripts/verify-api-endpoints.js",
+    "analyze-send-curl": "node scripts/analyze-send-curl.js",
+    "verify-send-replay": "node scripts/verify-send-replay.js",
+    "api-message": "node scripts/send-api-message.js",
+    "api-deep-research": "node src/cli.js api-deep-research",
+    "watch-api-job": "node scripts/watch-api-job.js",
+    "analyze-har": "node scripts/analyze-har.js",
+    "analyze-upload-curls": "node scripts/analyze-upload-curls.js",
+    "jobs": "node src/cli.js jobs",
+    "test": "node --check src/cli.js && node --check src/chatgpt-api.js && node --check src/jobs.js && node --check src/model-presets.js && node --check src/util.js && node --check src/config.js && for f in scripts/*.js; do node --check \"$f\" || exit 1; done"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "type": "module"
+}

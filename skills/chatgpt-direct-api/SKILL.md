@@ -43,16 +43,27 @@ List recent ChatGPT Project chats:
 npm run chats
 ```
 
+Default chat listing and search are scoped to the configured ChatGPT Project. Only use `--all` or another Project when the user explicitly asks to find, inspect, summarize, export, or resume a chat outside the configured Project.
+
+Search ChatGPT chats with ChatGPT's native search:
+
+```bash
+npm run search-chats -- "observability roadmap"
+npm run search-chats -- --all "observability roadmap"
+```
+
 Resume a previous ChatGPT Project chat by recent-chat number, conversation id, or local job id:
 
 ```bash
 npm run resume -- 1 --prompt "Pick this back up."
+npm run resume -- --search "observability roadmap" --prompt "Continue this thread."
 ```
 
 Export a previous ChatGPT Project chat to Markdown:
 
 ```bash
 npm run transcript -- 1
+npm run transcript -- --search "observability roadmap"
 ```
 
 For lower-level one-shot calls or scripted continuation, `ask` remains available:

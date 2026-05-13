@@ -92,15 +92,20 @@ export function capabilities() {
         transcriptDefault: "output/conversations/",
       },
       chats: {
-        description: "List recent ChatGPT Project conversations.",
+        description: "List recent ChatGPT conversations. Defaults to the configured Project; use --all only when explicitly requested.",
+        defaultOutput: "human",
+        detailedFlag: "--json",
+      },
+      "search-chats": {
+        description: "Search ChatGPT conversations. Defaults to the configured Project; use --all or --project only when explicitly requested.",
         defaultOutput: "human",
         detailedFlag: "--json",
       },
       resume: {
-        description: "Resume a previous ChatGPT Project conversation by recent-chat number, conversation id, or job id.",
+        description: "Resume a previous ChatGPT conversation by recent-chat number, conversation id, job id, or --search.",
       },
       transcript: {
-        description: "Export a ChatGPT Project conversation to Markdown by recent-chat number, conversation id, or job id.",
+        description: "Export a ChatGPT conversation to Markdown by recent-chat number, conversation id, job id, or --search.",
       },
       status: {
         description: "Refresh and print a job record.",

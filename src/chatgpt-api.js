@@ -317,6 +317,10 @@ export function projectIdFromUrl(url = loadLocalConfig({ required: false })?.pro
 export async function listProjectConversations(headers, { limit = 20 } = {}) {
   const projectId = projectIdFromUrl();
   if (!projectId) throw new Error("No ChatGPT Project ID configured. Run `npm run setup` first.");
+  return listConversationsForProject(headers, projectId, { limit });
+}
+
+export async function listConversationsForProject(headers, projectId, { limit = 20 } = {}) {
   const jsonHeaders = { ...headers, accept: "application/json" };
   const items = [];
   let cursor = "0";
@@ -329,6 +333,29 @@ export async function listProjectConversations(headers, { limit = 20 } = {}) {
     cursor = list.cursor;
   }
   return items.slice(0, limit);
+}
+
+export async function listAllConversations(headers, { limit = 20, offset = 0 } = {}) {
+  const jsonHeaders = { ...headers, accept: "application/json" };
+  const response = await fetch(
+    `https://chatgpt.com/backend-api/conversations?offset=${encodeURIComponent(offset)}&limit=${encodeURIComponent(limit)}&order=updated`,
+    { headers: jsonHeaders },
+  );
+  const json = await response.json();
+  if (!response.ok) throw new Error(`List conversations failed: ${response.status} ${JSON.stringify(json)}`);
+  return (json.items || []).slice(0, limit);
+}
+
+export async function searchConversations(headers, { query, limit = 10, projectId } = {}) {
+  if (!query) throw new Error("Search query is required.");
+  const params = new URLSearchParams({ query, limit: String(limit) });
+  if (projectId) params.set("conversation_template_id", projectId);
+  const response = await fetch(`https://chatgpt.com/backend-api/conversations/search?${params.toString()}`, {
+    headers: { ...headers, accept: "application/json" },
+  });
+  const json = await response.json();
+  if (!response.ok) throw new Error(`Search conversations failed: ${response.status} ${JSON.stringify(json)}`);
+  return (json.items || []).slice(0, limit);
 }
 
 export async function fetchLatestAssistantText(headers, conversationId) {

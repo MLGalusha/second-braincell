@@ -147,16 +147,27 @@ List recent ChatGPT Project chats:
 npm run chats
 ```
 
+By default, chat listing and search stay inside the configured ChatGPT Project. To search outside that Project, ask explicitly and use `--all` or `--project <project-id>`.
+
+Search ChatGPT chats with ChatGPT's native search:
+
+```bash
+npm run search-chats -- "observability roadmap"
+npm run search-chats -- --all "observability roadmap"
+```
+
 Resume a previous ChatGPT Project chat by recent-chat number, conversation id, or local job id:
 
 ```bash
 npm run resume -- 1 --prompt "Pick this back up and give me the next decision."
+npm run resume -- --search "observability roadmap" --prompt "Continue this thread."
 ```
 
 Export a previous ChatGPT Project chat to Markdown:
 
 ```bash
 npm run transcript -- 1
+npm run transcript -- --search "observability roadmap"
 ```
 
 One-shot or scripted text request:
@@ -198,7 +209,9 @@ List local Second Braincell jobs:
 npm run chatgpt -- jobs
 ```
 
-Use `--json` with `chats`, `jobs`, or `transcript` when you need structured debug output.
+Use `--json` with `chats`, `search-chats`, `jobs`, or `transcript` when you need structured debug output.
+
+For privacy, the default scope is the configured ChatGPT Project. Only use `--all` or another Project when the user explicitly asks to find, inspect, summarize, export, or resume a chat outside the configured Project.
 
 Text chat is synchronous by default. Image generation and Deep Research are async by default: they submit quickly, create a job under `output/jobs/`, start a watcher, and print the status command plus watcher status path. Agents should treat these async jobs as fire-and-forget: submit the job, create a thread heartbeat automation when available, report the job id/status path if useful, then stop or continue with other work. Creating the heartbeat is required in Codex sessions with automation support. Image jobs use a 30-second heartbeat; Deep Research jobs use a 10-minute heartbeat. Use `--sync` for image or Deep Research only when you want the initial command to wait, and only poll manually when progress or retrieval is explicitly requested.
 

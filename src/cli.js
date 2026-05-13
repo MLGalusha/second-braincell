@@ -15,8 +15,12 @@ import {
   fetchConversation,
   findImageAssetPointers,
   latestAssistantTextFromConversation,
+  listAllConversations,
+  listConversationsForProject,
   listProjectConversations,
   loadCurlTemplate,
+  projectIdFromUrl,
+  searchConversations,
   sendApiMessage,
   uploadFile,
 } from "./chatgpt-api.js";
@@ -56,6 +60,7 @@ Usage:
   npm run chatgpt -- ask --kind deep-research --prompt "..."
   npm run chatgpt -- converse --prompt "Start a conversation..."
   npm run chatgpt -- chats
+  npm run chatgpt -- search-chats "query"
   npm run chatgpt -- resume <chat-number|conversation-id|job-id> --prompt "..."
   npm run chatgpt -- transcript <chat-number|conversation-id|job-id>
   npm run chatgpt -- status <job-id>
@@ -86,6 +91,9 @@ Options:
   --transcript PATH
   --out PATH
   --limit N
+  --all
+  --project PROJECT_ID
+  --search QUERY
   --max-turns N
   --sync
   --watch
@@ -139,6 +147,7 @@ function formatHumanCapabilities(data) {
   lines.push("Default commands:");
   lines.push('  npm run converse -- --prompt "Have a conversation with ChatGPT about this decision."');
   lines.push("  npm run chats");
+  lines.push('  npm run search-chats -- "observability roadmap"');
   lines.push("  npm run resume -- 1");
   lines.push("  npm run transcript -- 1");
   lines.push('  npm run ask -- --attach-file ./document.pdf --prompt "Answer questions about this file."');
@@ -188,8 +197,32 @@ function sanitizeChatSummary(chat) {
   };
 }
 
-function formatChatList(chats) {
-  const lines = [color("1;36", "Recent ChatGPT Project Chats"), ""];
+function sanitizeSearchResult(result) {
+  return {
+    conversation_id: result.conversation_id,
+    title: result.title || null,
+    update_time: result.update_time || null,
+    is_archived: Boolean(result.is_archived),
+    snippet: result.payload?.snippet || null,
+    message_id: result.payload?.message_id || null,
+  };
+}
+
+function scopeLabel(argv) {
+  if (hasFlag(argv, "--all")) return "All ChatGPT Chats";
+  const project = scopeProjectId(argv);
+  if (project) return `ChatGPT Project Chats: ${project}`;
+  return "ChatGPT Project Chats";
+}
+
+function scopeFlagText(argv) {
+  if (hasFlag(argv, "--all")) return " --all";
+  const project = scopeProjectId(argv);
+  return project ? ` --project ${JSON.stringify(project)}` : "";
+}
+
+function formatChatList(chats, argv = []) {
+  const lines = [color("1;36", `Recent ${scopeLabel(argv)}`), ""];
   if (!chats.length) {
     lines.push("No chats found.");
     return lines.join("\n");
@@ -202,8 +235,32 @@ function formatChatList(chats) {
     lines.push("");
   }
   lines.push("Resume:");
-  lines.push("  npm run resume -- 1");
+  lines.push(`  npm run resume --${scopeFlagText(argv)} 1`);
   lines.push("  npm run resume -- <conversation-id>");
+  return lines.join("\n").trimEnd();
+}
+
+function formatSearchResults(results, query, argv = []) {
+  const lines = [color("1;36", "ChatGPT Chat Search"), ""];
+  lines.push(`Query: ${query}`);
+  lines.push(`Scope: ${scopeLabel(argv)}`);
+  lines.push("");
+  if (!results.length) {
+    lines.push("No matching chats found.");
+    return lines.join("\n");
+  }
+  for (const [index, result] of results.entries()) {
+    const item = sanitizeSearchResult(result);
+    lines.push(`${index + 1}. ${item.title || "Untitled chat"}`);
+    lines.push(`   id: ${item.conversation_id}`);
+    lines.push(`   updated: ${formatDate(item.update_time ? item.update_time * 1000 : null)}`);
+    if (item.snippet) lines.push(`   match: ${truncate(item.snippet, 120)}`);
+    lines.push("");
+  }
+  lines.push("Resume:");
+  lines.push(`  npm run resume --${scopeFlagText(argv)} --search ${JSON.stringify(query)}`);
+  lines.push("Export:");
+  lines.push(`  npm run transcript --${scopeFlagText(argv)} --search ${JSON.stringify(query)}`);
   return lines.join("\n").trimEnd();
 }
 
@@ -579,11 +636,50 @@ async function recentChats(limit) {
   return listProjectConversations(loadLocalHeaders(), { limit });
 }
 
-async function resolveConversationSelector(selector, { limit = 30 } = {}) {
+function scopeProjectId(argv) {
+  const project = getFlag(argv, "--project", undefined);
+  if (project) return project;
+  return undefined;
+}
+
+async function scopedChats(argv, { limit = 20 } = {}) {
+  const headers = loadLocalHeaders();
+  const project = scopeProjectId(argv);
+  if (hasFlag(argv, "--all")) return listAllConversations(headers, { limit });
+  if (project) return listConversationsForProject(headers, project, { limit });
+  return listProjectConversations(headers, { limit });
+}
+
+function searchQueryArg(argv) {
+  const flagged = getFlag(argv, "--search", getFlag(argv, "--query", undefined));
+  if (flagged) return flagged;
+  const positional = firstPositionalArg(argv);
+  if (positional) return positional;
+  throw new Error("Search query is required.");
+}
+
+async function scopedSearch(argv, { limit = 10 } = {}) {
+  const headers = loadLocalHeaders();
+  const project = scopeProjectId(argv);
+  const useDefaultProject = !hasFlag(argv, "--all") && !project;
+  const projectId = project || (useDefaultProject ? projectIdFromUrl() : undefined);
+  const query = searchQueryArg(argv);
+  const results = await searchConversations(headers, { query, limit, projectId });
+  return { query, results };
+}
+
+async function resolveConversationFromSearch(argv, { limit = 10 } = {}) {
+  const { query, results } = await scopedSearch(argv, { limit });
+  const result = results[0];
+  if (!result?.conversation_id) throw new Error(`No matching ChatGPT chats found for: ${query}`);
+  return { conversationId: result.conversation_id, source: "search", result };
+}
+
+async function resolveConversationSelector(selector, { limit = 30, argv = [] } = {}) {
   if (!selector) throw new Error("Expected a chat number, ChatGPT conversation id, or Second Braincell job id.");
 
   if (/^\d+$/.test(selector)) {
-    const chats = await recentChats(limit);
+    const chats = await scopedChats(argv, { limit });
     const chat = chats[Number(selector) - 1];
     if (!chat) throw new Error(`No recent chat at position ${selector}. Run \`npm run chats\` to see available chats.`);
     return { conversationId: chat.id, source: "recent-chat", chat };
@@ -672,16 +768,67 @@ async function runConverse(argv) {
 async function runChats(argv) {
   const limit = Number(getFlag(argv, "--limit", 20));
   if (!Number.isFinite(limit) || limit < 1) throw new Error("--limit must be a positive number");
-  const chats = await recentChats(limit);
+  const chats = await scopedChats(argv, { limit });
   if (hasFlag(argv, "--json") || hasFlag(argv, "--detailed")) {
     console.log(JSON.stringify(chats.map(sanitizeChatSummary), null, 2));
   } else {
-    console.log(formatChatList(chats));
+    console.log(formatChatList(chats, argv));
   }
 }
 
+async function runSearchChats(argv) {
+  const limit = Number(getFlag(argv, "--limit", 10));
+  if (!Number.isFinite(limit) || limit < 1) throw new Error("--limit must be a positive number");
+  const { query, results } = await scopedSearch(argv, { limit });
+  if (hasFlag(argv, "--json") || hasFlag(argv, "--detailed")) {
+    console.log(JSON.stringify(results.map(sanitizeSearchResult), null, 2));
+  } else {
+    console.log(formatSearchResults(results, query, argv));
+  }
+}
+
+function firstPositionalIndex(argv) {
+  const valueFlags = new Set([
+    "--prompt",
+    "--prompt-file",
+    "--file",
+    "--curl",
+    "--curl-file",
+    "--project-url",
+    "--model",
+    "--reasoning",
+    "--thinking-effort",
+    "--kind",
+    "--quality",
+    "--attach-file",
+    "--continue-job",
+    "--conversation-id",
+    "--parent-message-id",
+    "--transcript",
+    "--out",
+    "--limit",
+    "--max-turns",
+    "--project",
+    "--search",
+    "--query",
+  ]);
+  for (let i = 0; i < argv.length; i += 1) {
+    if (valueFlags.has(argv[i])) {
+      i += 1;
+      continue;
+    }
+    if (!String(argv[i]).startsWith("--")) return i;
+  }
+  return -1;
+}
+
+function firstPositionalArg(argv) {
+  const index = firstPositionalIndex(argv);
+  return index === -1 ? undefined : argv[index];
+}
+
 function splitSelectorArg(argv, command) {
-  const index = argv.findIndex((arg) => !String(arg).startsWith("--"));
+  const index = firstPositionalIndex(argv);
   if (index === -1) throw new Error(`${command} requires a chat number, ChatGPT conversation id, or Second Braincell job id.`);
   return {
     selector: argv[index],
@@ -690,14 +837,28 @@ function splitSelectorArg(argv, command) {
 }
 
 async function runResume(argv) {
-  const { selector, rest } = splitSelectorArg(argv, "resume");
-  const resolved = await resolveConversationSelector(selector, { limit: Number(getFlag(rest, "--limit", 30)) || 30 });
+  let rest = argv;
+  let resolved;
+  if (hasFlag(argv, "--search") || hasFlag(argv, "--query")) {
+    resolved = await resolveConversationFromSearch(argv, { limit: Number(getFlag(argv, "--limit", 10)) || 10 });
+  } else {
+    const split = splitSelectorArg(argv, "resume");
+    rest = split.rest;
+    resolved = await resolveConversationSelector(split.selector, { limit: Number(getFlag(rest, "--limit", 30)) || 30, argv: rest });
+  }
   await runConverse([...rest, "--conversation-id", resolved.conversationId]);
 }
 
 async function runTranscript(argv) {
-  const { selector, rest } = splitSelectorArg(argv, "transcript");
-  const resolved = await resolveConversationSelector(selector, { limit: Number(getFlag(rest, "--limit", 30)) || 30 });
+  let rest = argv;
+  let resolved;
+  if (hasFlag(argv, "--search") || hasFlag(argv, "--query")) {
+    resolved = await resolveConversationFromSearch(argv, { limit: Number(getFlag(argv, "--limit", 10)) || 10 });
+  } else {
+    const split = splitSelectorArg(argv, "transcript");
+    rest = split.rest;
+    resolved = await resolveConversationSelector(split.selector, { limit: Number(getFlag(rest, "--limit", 30)) || 30, argv: rest });
+  }
   const history = await fetchConversation(loadLocalHeaders(), resolved.conversationId);
   const markdown = transcriptFromConversation(history, resolved.conversationId);
 
@@ -829,6 +990,11 @@ async function main() {
 
     if (command === "chats") {
       await runChats(argv);
+      return;
+    }
+
+    if (command === "search-chats") {
+      await runSearchChats(argv);
       return;
     }
 

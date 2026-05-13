@@ -2,6 +2,7 @@ node_modules/
 .DS_Store
 
 # Runtime artifacts and private captures
+.local/
 output/
 *.har
 *.curl

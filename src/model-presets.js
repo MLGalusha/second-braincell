@@ -1,3 +1,5 @@
+import { localSetupStatus } from "./local-config.js";
+
 export const MODEL_PRESETS = {
   "gpt-5.3": {
     label: "GPT-5.3",
@@ -69,8 +71,13 @@ export function resolveModelPreset({ modelName, reasoning, allowRawModel = true 
 }
 
 export function capabilities() {
+  const setup = localSetupStatus();
   return {
+    setup,
     commands: {
+      setup: {
+        description: "Create ignored .local/auth.json and .local/config.json from one project URL and one authenticated ChatGPT cURL.",
+      },
       ask: {
         description: "Submit a ChatGPT web API job with agent-friendly defaults.",
         defaultAsync: true,
@@ -92,18 +99,20 @@ export function capabilities() {
       imageQualities: ["high", "instant"],
       deepResearch: {
         async: true,
-        curlTemplate: "/tmp/chatgpt-send-deep-research.curl",
+        ready: setup.features.deepResearch,
       },
       attachments: {
         supported: true,
         flag: "--attach-file",
+        ready: setup.features.attachments,
       },
     },
-    templates: {
-      message: "/tmp/chatgpt-send.curl",
-      imageHigh: "/tmp/chatgpt-send-image.curl",
-      imageInstant: "/tmp/chatgpt-send-image-instant.curl",
-      deepResearch: "/tmp/chatgpt-send-deep-research.curl",
+    readiness: {
+      message: setup.features.message,
+      imageHigh: setup.features.imageHigh,
+      imageInstant: setup.features.imageInstant,
+      deepResearch: setup.features.deepResearch,
+      attachments: setup.features.attachments,
     },
   };
 }

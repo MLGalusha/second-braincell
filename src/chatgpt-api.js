@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { PROJECT_URL } from "./config.js";
 import { fileInfo } from "./util.js";
+import { loadLocalConfig, loadLocalHeaders } from "./local-config.js";
+import { bodyForKind } from "./request-builders.js";
 
 export const DEFAULT_API_CURL_PATH = "/tmp/chatgpt-send.curl";
 
@@ -109,7 +110,7 @@ export function parseUploadProcessStream(text) {
   return { events, final };
 }
 
-export async function uploadFile({ headers, filePath, useCase = "multimodal", indexForRetrieval = true } = {}) {
+export async function uploadFile({ headers, filePath, useCase = "my_files", indexForRetrieval = true } = {}) {
   const info = fileInfo(filePath);
   const createResponse = await fetch("https://chatgpt.com/backend-api/files", {
     method: "POST",
@@ -142,7 +143,7 @@ export async function uploadFile({ headers, filePath, useCase = "multimodal", in
     method: "POST",
     headers: apiHeaders(headers, "text/event-stream"),
     body: JSON.stringify({
-      entry_surface: "composer",
+      entry_surface: "chat_composer",
       file_id: fileId,
       file_name: info.name,
       index_for_retrieval: indexForRetrieval,
@@ -241,7 +242,7 @@ export function parseEventStream(text) {
   return { responseText, conversationId, finishSeen, errorSeen, eventTypes: Object.fromEntries([...eventTypes.entries()].sort()) };
 }
 
-export function projectIdFromUrl(url = PROJECT_URL) {
+export function projectIdFromUrl(url = loadLocalConfig({ required: false })?.projectUrl || process.env.CHATGPT_PROJECT_URL || "") {
   return url.match(/\/g\/(g-p-[0-9a-f]+)(?:-|\/|$)/i)?.[1] || null;
 }
 
@@ -354,16 +355,39 @@ export async function downloadGeneratedImage({ headers, assetPointer, outPath })
   return { bytes, contentType };
 }
 
-export async function sendApiMessage({ prompt, curlPath = DEFAULT_API_CURL_PATH, model, thinkingEffort, attachments = [], fetchFinalText = true, forceFetchFinalText = false } = {}) {
+export async function sendApiMessage({
+  prompt,
+  curlPath,
+  model,
+  thinkingEffort,
+  attachments = [],
+  fetchFinalText = true,
+  forceFetchFinalText = false,
+  kind = "message",
+  quality = "high",
+} = {}) {
   if (!prompt) throw new Error("sendApiMessage requires a prompt.");
-  const template = loadCurlTemplate(curlPath);
-  const body = prepareMessageBody(JSON.parse(template.bodyRaw), prompt, { model, thinkingEffort, attachments });
-  const response = await fetch(template.url, {
+  const localConfig = loadLocalConfig({ required: !curlPath });
+  const template = curlPath ? loadCurlTemplate(curlPath) : null;
+  const headers = template ? template.headers : loadLocalHeaders();
+  const url = template ? template.url : localConfig.conversationEndpoint || "https://chatgpt.com/backend-api/f/conversation";
+  const body = localConfig?.projectUrl
+    ? bodyForKind({
+        kind,
+        quality,
+        prompt,
+        projectUrl: localConfig.projectUrl,
+        model,
+        thinkingEffort,
+        attachments,
+      })
+    : prepareMessageBody(JSON.parse(template.bodyRaw), prompt, { model, thinkingEffort, attachments });
+  const response = await fetch(url, {
     method: "POST",
     headers: {
-      ...template.headers,
-      accept: template.headers.accept || "text/event-stream",
-      "content-type": template.headers["content-type"] || "application/json",
+      ...headers,
+      accept: headers.accept || "text/event-stream",
+      "content-type": headers["content-type"] || "application/json",
     },
     body: JSON.stringify(body),
     redirect: "manual",
@@ -371,13 +395,13 @@ export async function sendApiMessage({ prompt, curlPath = DEFAULT_API_CURL_PATH,
   const streamText = await response.text();
   const stream = parseEventStream(streamText);
   if (fetchFinalText && response.ok && !stream.errorSeen && (forceFetchFinalText || !stream.responseText)) {
-    stream.responseText = await fetchLatestAssistantText(template.headers, stream.conversationId);
+    stream.responseText = await fetchLatestAssistantText(headers, stream.conversationId);
   }
   return {
     status: response.status,
     ok: response.ok,
     contentType: response.headers.get("content-type") || "",
-    headers: template.headers,
+    headers,
     ...stream,
   };
 }

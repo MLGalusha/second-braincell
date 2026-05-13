@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
-import { existsSync, writeFileSync } from "node:fs";
+import { createInterface } from "node:readline/promises";
+import { stdin as input, stdout as output } from "node:process";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createJob, listJobs, loadJob, saveJob, updateJob } from "./jobs.js";
@@ -17,6 +19,7 @@ import {
   sendApiMessage,
   uploadFile,
 } from "./chatgpt-api.js";
+import { loadLocalHeaders, readCurlInputFile, writeLocalSetup } from "./local-config.js";
 
 const __filename = fileURLToPath(import.meta.url);
 
@@ -24,6 +27,7 @@ function usage() {
   return `
 Usage:
   npm run chatgpt -- ask --prompt "..."
+  npm run chatgpt -- setup
   npm run chatgpt -- ask --kind image --quality high --prompt "..."
   npm run chatgpt -- ask --kind deep-research --prompt "..."
   npm run chatgpt -- status <job-id>
@@ -40,6 +44,8 @@ Options:
   --prompt-file PATH
   --async
   --curl PATH
+  --curl-file PATH
+  --project-url URL
   --model MODEL
   --reasoning light|standard|heavy|extended
   --thinking-effort VALUE
@@ -54,26 +60,64 @@ Options:
 `.trim();
 }
 
+async function promptSetupValue(question) {
+  const rl = createInterface({ input, output });
+  try {
+    return (await rl.question(question)).trim();
+  } finally {
+    rl.close();
+  }
+}
+
+async function runSetup(argv) {
+  let projectUrl = getFlag(argv, "--project-url", undefined);
+  let curlText = getFlag(argv, "--curl", undefined);
+  const curlFile = getFlag(argv, "--curl-file", undefined);
+  if (curlFile) curlText = readCurlInputFile(curlFile);
+  if (!projectUrl && process.stdin.isTTY) projectUrl = await promptSetupValue("ChatGPT project URL: ");
+  if (!curlText && process.stdin.isTTY) {
+    curlText = await promptSetupValue("Paste one authenticated chatgpt.com cURL from DevTools: ");
+  }
+  if (!curlText && !process.stdin.isTTY) curlText = readFileSync(0, "utf8");
+  if (!projectUrl) throw new Error("Missing project URL. Run `npm run setup -- --project-url <url>` when piping a cURL on stdin.");
+  const status = writeLocalSetup({ projectUrl, curlText });
+  console.log(
+    JSON.stringify(
+      {
+        ready: status.ready,
+        authPath: status.auth.path,
+        configPath: status.config.path,
+        projectId: status.config.projectId,
+        next: "npm run capabilities",
+      },
+      null,
+      2,
+    ),
+  );
+}
+
 async function runDirectApiMessage(argv) {
   const prompt = readTextArg(argv);
-  const curlPath = getFlag(argv, "--curl", "/tmp/chatgpt-send.curl");
+  const curlPath = getFlag(argv, "--curl", undefined);
   const model = getFlag(argv, "--model", undefined);
   const thinkingEffort = getFlag(argv, "--thinking-effort", undefined);
   const modelPreset = getFlag(argv, "--model-preset", undefined);
   const outputKind = getFlag(argv, "--output-kind", "text");
   const jobKind = getFlag(argv, "--job-kind", outputKind === "image" ? "api-image" : "api-message");
+  const kind = getFlag(argv, "--kind", jobKind === "api-deep-research" ? "deep-research" : outputKind === "image" ? "image" : "message");
+  const quality = getFlag(argv, "--quality", "high");
   const attachFiles = getFlags(argv, "--attach-file");
   const { job } = createJob({
     kind: jobKind,
     prompt,
-    options: { curlPath, model, thinkingEffort, modelPreset, outputKind, jobKind, attachFiles },
+    options: { curlPath, model, thinkingEffort, modelPreset, outputKind, jobKind, kind, quality, attachFiles },
   });
 
   try {
-    const template = loadCurlTemplate(curlPath);
+    const headers = curlPath ? loadCurlTemplate(curlPath).headers : loadLocalHeaders();
     const attachments = [];
     for (const file of attachFiles) {
-      attachments.push(await uploadFile({ headers: template.headers, filePath: file }));
+      attachments.push(await uploadFile({ headers, filePath: file }));
     }
     if (attachments.length) {
       job.artifacts.attachments = attachments.map((attachment) => ({
@@ -85,7 +129,17 @@ async function runDirectApiMessage(argv) {
       }));
       saveJob(job);
     }
-    const result = await sendApiMessage({ prompt, curlPath, model, thinkingEffort, attachments, fetchFinalText: outputKind !== "image", forceFetchFinalText: attachments.length > 0 && !hasFlag(argv, "--async") });
+    const result = await sendApiMessage({
+      prompt,
+      curlPath,
+      model,
+      thinkingEffort,
+      attachments,
+      fetchFinalText: outputKind !== "image",
+      forceFetchFinalText: outputKind !== "image" && !hasFlag(argv, "--async"),
+      kind,
+      quality,
+    });
     job.status = result.ok && !result.errorSeen ? (hasFlag(argv, "--async") ? "submitted" : "completed") : "failed";
     job.statusCode = result.status;
     job.contentType = result.contentType;
@@ -94,7 +148,7 @@ async function runDirectApiMessage(argv) {
     job.errorSeen = result.errorSeen;
     job.eventTypes = result.eventTypes;
     job.responseLength = result.responseText?.length || 0;
-    job.options.curlPath = curlPath;
+    if (curlPath) job.options.curlPath = curlPath;
     saveJob(job);
     const responsePath = resolve(JOBS_DIR, job.id, "response.md");
     if (result.responseText && outputKind !== "image") writeFileSync(responsePath, `${result.responseText}\n`);
@@ -181,15 +235,17 @@ async function runAsk(argv) {
       "api-image",
       "--output-kind",
       "image",
-      "--curl",
-      getFlag(argv, "--quality", "high") === "instant" ? "/tmp/chatgpt-send-image-instant.curl" : "/tmp/chatgpt-send-image.curl",
+      "--kind",
+      "image",
+      "--quality",
+      getFlag(argv, "--quality", "high"),
     ]);
     return;
   }
 
   if (kind === "deep-research") {
     const modeledArgv = hasFlag(argv, "--model") || hasFlag(argv, "--reasoning") || hasFlag(argv, "--thinking-effort") ? applyModelPreset(nextArgv, { defaultModel: undefined }) : nextArgv;
-    await runDirectApiMessage([...modeledArgv, "--job-kind", "api-deep-research", "--curl", "/tmp/chatgpt-send-deep-research.curl"]);
+    await runDirectApiMessage([...modeledArgv, "--job-kind", "api-deep-research", "--kind", "deep-research"]);
     return;
   }
 
@@ -210,8 +266,8 @@ function startApiWatcher(jobId, { notify = false, intervalSeconds, timeoutSecond
 
 export async function updateApiJobStatus(job) {
   if (!job.conversationId) return updateJob(job, { status: "needs_user", warning: "No conversation id captured for API job." });
-  const template = loadCurlTemplate(job.options?.curlPath || "/tmp/chatgpt-send.curl");
-  const history = await fetchConversation(template.headers, job.conversationId);
+  const headers = job.options?.curlPath ? loadCurlTemplate(job.options.curlPath).headers : loadLocalHeaders();
+  const history = await fetchConversation(headers, job.conversationId);
   const responsePath = resolve(JOBS_DIR, job.id, "response.md");
 
   if (job.options?.outputKind === "image" || job.kind === "api-image") {
@@ -221,7 +277,7 @@ export async function updateApiJobStatus(job) {
     }
     ensureDir(IMAGES_DIR);
     const imagePath = uniquePath(IMAGES_DIR, job.id, ".png");
-    const downloaded = await downloadGeneratedImage({ headers: template.headers, assetPointer: pointers.at(-1).asset_pointer, outPath: imagePath });
+    const downloaded = await downloadGeneratedImage({ headers, assetPointer: pointers.at(-1).asset_pointer, outPath: imagePath });
     job.artifacts.image = imagePath;
     job.artifacts.imageContentType = downloaded.contentType;
     job.artifacts.chatTitle = history.title;
@@ -271,6 +327,11 @@ async function main() {
       return;
     }
 
+    if (command === "setup") {
+      await runSetup(argv);
+      return;
+    }
+
     if (command === "capabilities") {
       console.log(JSON.stringify(capabilities(), null, 2));
       return;
@@ -287,15 +348,13 @@ async function main() {
     }
 
     if (command === "api-deep-research") {
-      const nextArgv = [...argv, "--job-kind", "api-deep-research"];
-      if (!nextArgv.includes("--curl")) nextArgv.push("--curl", "/tmp/chatgpt-send-deep-research.curl");
+      const nextArgv = [...argv, "--job-kind", "api-deep-research", "--kind", "deep-research"];
       await runDirectApiMessage(nextArgv);
       return;
     }
 
     if (command === "api-image") {
-      const nextArgv = [...argv, "--output-kind", "image"];
-      if (!nextArgv.includes("--curl")) nextArgv.push("--curl", getFlag(argv, "--quality", "high") === "instant" ? "/tmp/chatgpt-send-image-instant.curl" : "/tmp/chatgpt-send-image.curl");
+      const nextArgv = [...argv, "--output-kind", "image", "--kind", "image"];
       await runDirectApiMessage(nextArgv);
       return;
     }

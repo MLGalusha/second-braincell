@@ -9,6 +9,7 @@
     "converse": "node src/cli.js converse",
     "chats": "node src/cli.js chats",
     "search-chats": "node src/cli.js search-chats",
+    "project-instructions": "node src/cli.js project-instructions",
     "resume": "node src/cli.js resume",
     "transcript": "node src/cli.js transcript",
     "capabilities": "node src/cli.js capabilities",

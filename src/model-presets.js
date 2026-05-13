@@ -101,6 +101,11 @@ export function capabilities() {
         defaultOutput: "human",
         detailedFlag: "--json",
       },
+      "project-instructions": {
+        description: "Read or explicitly update the configured ChatGPT Project instructions. Updates require --yes and create a local backup.",
+        defaultOutput: "human",
+        supportsWrite: true,
+      },
       resume: {
         description: "Resume a previous ChatGPT conversation by recent-chat number, conversation id, job id, or --search.",
       },

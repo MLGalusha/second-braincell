@@ -358,6 +358,74 @@ export async function searchConversations(headers, { query, limit = 10, projectI
   return (json.items || []).slice(0, limit);
 }
 
+export async function fetchProjectResource(headers, projectId = projectIdFromUrl()) {
+  if (!projectId) throw new Error("No ChatGPT Project ID configured. Run `npm run setup` first.");
+  const response = await fetch(`https://chatgpt.com/backend-api/gizmos/${encodeURIComponent(projectId)}`, {
+    headers: { ...headers, accept: "application/json" },
+  });
+  const json = await response.json();
+  if (!response.ok) throw new Error(`Fetch project failed: ${response.status} ${JSON.stringify(json)}`);
+  return json;
+}
+
+function projectSharingForUpsert(gizmo) {
+  const subjects = gizmo.sharing?.subjects || [];
+  if (!subjects.length) {
+    return [
+      {
+        type: "private",
+        capabilities: {
+          can_read: true,
+          can_view_config: false,
+          can_write: false,
+          can_delete: false,
+          can_export: false,
+          can_share: false,
+        },
+      },
+    ];
+  }
+  return subjects;
+}
+
+export function projectUpsertBodyFromResource(resource, patch = {}) {
+  const gizmo = resource.gizmo || {};
+  const display = gizmo.display || {};
+  return {
+    gizmo_id: gizmo.id,
+    instructions: patch.instructions ?? gizmo.instructions ?? "",
+    display: {
+      name: patch.name ?? display.name ?? "Project",
+      description: patch.description ?? display.description ?? "",
+      emoji: patch.emoji ?? display.emoji ?? undefined,
+      theme: patch.theme ?? display.theme ?? undefined,
+      profile_pic_id: patch.profilePicId ?? display.profile_pic_id ?? undefined,
+      profile_picture_url: patch.profilePictureUrl ?? display.profile_picture_url ?? undefined,
+      prompt_starters: patch.promptStarters ?? display.prompt_starters ?? [],
+    },
+    tools: [],
+    memory_scope: patch.memoryScope ?? gizmo.memory_scope ?? "project_v2",
+    files: (resource.files || []).map(({ metadata, ...file }) => ({ ...file, location: "file_service" })),
+    training_disabled: patch.trainingDisabled ?? gizmo.training_disabled ?? false,
+    sharing: projectSharingForUpsert(gizmo),
+    categories: undefined,
+  };
+}
+
+export async function updateProjectInstructions(headers, { projectId = projectIdFromUrl(), instructions } = {}) {
+  if (typeof instructions !== "string") throw new Error("instructions must be a string.");
+  const resource = await fetchProjectResource(headers, projectId);
+  const body = projectUpsertBodyFromResource(resource, { instructions });
+  const response = await fetch("https://chatgpt.com/backend-api/gizmos/snorlax/upsert", {
+    method: "POST",
+    headers: apiHeaders(headers),
+    body: JSON.stringify(body),
+  });
+  const json = await response.json();
+  if (!response.ok || json.error) throw new Error(`Update project instructions failed: ${response.status} ${JSON.stringify(json)}`);
+  return { before: resource, result: json };
+}
+
 export async function fetchLatestAssistantText(headers, conversationId) {
   let id = conversationId;
   const jsonHeaders = { ...headers, accept: "application/json" };

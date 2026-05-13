@@ -52,6 +52,16 @@ npm run search-chats -- "observability roadmap"
 npm run search-chats -- --all "observability roadmap"
 ```
 
+Read or update the configured ChatGPT Project instructions:
+
+```bash
+npm run project-instructions
+npm run project-instructions -- --set-file ./instructions.md
+npm run project-instructions -- --set-file ./instructions.md --yes
+```
+
+Instruction updates require `--yes` and create a local backup first. Do not update Project instructions unless the user explicitly asks to change them.
+
 Resume a previous ChatGPT Project chat by recent-chat number, conversation id, or local job id:
 
 ```bash

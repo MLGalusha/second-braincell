@@ -15,6 +15,8 @@ const PROJECT_ID_IN_URL_RE = /\/g\/(g-p-[a-z0-9]+)(?:-|\/|$)/i;
 export function normalizeCurl(value) {
   return String(value || "")
     .replace(/\\\r?\n/g, " ")
+    .replace(/\^\r?\n/g, " ")
+    .replace(/`\r?\n/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }

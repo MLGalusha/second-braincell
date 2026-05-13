@@ -1,7 +1,10 @@
 {
   "name": "second-braincell",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "src/cli.js",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "chatgpt": "node src/cli.js",
     "connect": "node src/cli.js connect",

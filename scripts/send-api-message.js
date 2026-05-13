@@ -1,11 +1,12 @@
 import { mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { sendApiMessage } from "../src/chatgpt-api.js";
 import { JOBS_DIR } from "../src/config.js";
 import { getFlag, jobId, readTextArg } from "../src/util.js";
 
 export async function runApiMessage(argv = process.argv) {
-  const curlPath = getFlag(argv, "--curl", "/tmp/chatgpt-send.curl");
+  const curlPath = getFlag(argv, "--curl", resolve(tmpdir(), "chatgpt-send.curl"));
   const model = getFlag(argv, "--model", undefined);
   const thinkingEffort = getFlag(argv, "--thinking-effort", undefined);
   const prompt = readTextArg(argv);

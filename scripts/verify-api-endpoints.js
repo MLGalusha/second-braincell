@@ -67,7 +67,7 @@ function getAuthHeaders() {
         `Missing auth headers. Provide one of:`,
         `- ${COOKIE_ENV}=... npm run verify-api`,
         `- ${CURL_ENV}='curl ...' npm run verify-api`,
-        `- pbpaste | npm run verify-api after copying request headers or Copy as cURL from DevTools`,
+        `- copy request headers or Copy as cURL from DevTools, then pipe that text into npm run verify-api`,
       ].join("\n"),
     );
   }

@@ -1,14 +1,18 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { resolve } from "node:path";
 import { fileInfo } from "./util.js";
 import { loadLocalConfig, loadLocalHeaders } from "./local-config.js";
 import { bodyForKind } from "./request-builders.js";
 
-export const DEFAULT_API_CURL_PATH = "/tmp/chatgpt-send.curl";
+export const DEFAULT_API_CURL_PATH = resolve(tmpdir(), "chatgpt-send.curl");
 
 export function normalizeCurl(value) {
   return String(value || "")
     .replace(/\\\r?\n/g, " ")
+    .replace(/\^\r?\n/g, " ")
+    .replace(/`\r?\n/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }

@@ -15,12 +15,13 @@ Usage:
 
 Behavior:
   - waiting: exits quietly with code 2 when --once is used
-  - completed: prints JSON, optionally sends a macOS notification, exits 0
-  - failed: prints JSON, optionally sends a macOS notification, exits 1
+  - completed: prints JSON, optionally sends a desktop notification when available, exits 0
+  - failed: prints JSON, optionally sends a desktop notification when available, exits 1
 `.trim();
 }
 
 function notify(title, message) {
+  if (process.platform !== "darwin") return;
   const script = `display notification ${JSON.stringify(message)} with title ${JSON.stringify(title)}`;
   spawnSync("osascript", ["-e", script], { stdio: "ignore" });
 }

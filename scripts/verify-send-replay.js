@@ -1,14 +1,17 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { OUTPUT_DIR } from "../src/config.js";
 
-const DEFAULT_CURL_PATH = "/tmp/chatgpt-send.curl";
+const DEFAULT_CURL_PATH = resolve(tmpdir(), "chatgpt-send.curl");
 const DEFAULT_PROMPT = "API replay verification. Reply OK.";
 
 function normalizeCurl(value) {
   return String(value || "")
     .replace(/\\\r?\n/g, " ")
+    .replace(/\^\r?\n/g, " ")
+    .replace(/`\r?\n/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }

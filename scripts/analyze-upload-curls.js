@@ -1,14 +1,17 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { OUTPUT_DIR } from "../src/config.js";
 
-const DEFAULT_RAW = "/tmp/chatgpt-upload-raw.curl";
-const DEFAULT_PROCESS = "/tmp/chatgpt-upload-process.curl";
-const DEFAULT_CREATE = "/tmp/chatgpt-upload-create.curl";
+const DEFAULT_RAW = resolve(tmpdir(), "chatgpt-upload-raw.curl");
+const DEFAULT_PROCESS = resolve(tmpdir(), "chatgpt-upload-process.curl");
+const DEFAULT_CREATE = resolve(tmpdir(), "chatgpt-upload-create.curl");
 
 function normalizeCurl(value) {
   return String(value || "")
     .replace(/\\\r?\n/g, " ")
+    .replace(/\^\r?\n/g, " ")
+    .replace(/`\r?\n/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }

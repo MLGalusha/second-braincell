@@ -1,12 +1,15 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { OUTPUT_DIR } from "../src/config.js";
 
-const inputPath = process.argv[2] || "/tmp/chatgpt-send.curl";
+const inputPath = process.argv[2] || resolve(tmpdir(), "chatgpt-send.curl");
 
 function normalizeCurl(value) {
   return String(value || "")
     .replace(/\\\r?\n/g, " ")
+    .replace(/\^\r?\n/g, " ")
+    .replace(/`\r?\n/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }

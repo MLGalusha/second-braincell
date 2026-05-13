@@ -96,6 +96,8 @@ npm run connect
 
 No need to paste the copied cURL into the terminal. Connect reads from your clipboard after you press Enter, and anything typed or pasted at the prompt is ignored.
 
+On Linux, if no clipboard helper is available, connect can offer to install one before falling back to `--curl-file`, `--curl`, or stdin.
+
 If ChatGPT signs you out or the copied session expires, commands fail with a `needs_connect` job status and tell you to run `npm run connect` again. Reconnecting refreshes `.local/auth.json` while keeping the configured Project ID in `.local/config.json`.
 
 Check readiness:

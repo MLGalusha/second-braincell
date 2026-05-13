@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 
 const files = execFileSync("git", ["ls-files"], { encoding: "utf8" })
   .split(/\r?\n/)
-  .filter(Boolean);
+  .filter((file) => file && file !== "scripts/security-check.js");
 
 const checks = [
   { name: "cookie header", re: /\bcookie:\s*[^`\s][^\n]{20,}/i },

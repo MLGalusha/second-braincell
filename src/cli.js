@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { spawn, execFileSync } from "node:child_process";
+import { spawn, execFileSync, spawnSync } from "node:child_process";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -51,7 +51,7 @@ function setupSteps(steps, start = 1) {
 async function waitForClipboard(label) {
   const prompt = color("1;33", `After copying the ${label}, press Enter. No need to paste. `);
   await promptSetupValue(prompt);
-  return readClipboard();
+  return await readClipboard();
 }
 
 function usage() {
@@ -304,12 +304,79 @@ async function promptSetupValue(question) {
   }
 }
 
-function readClipboard() {
-  try {
-    return execFileSync("pbpaste", { encoding: "utf8", maxBuffer: 1024 * 1024 * 16 }).trim();
-  } catch {
-    throw new Error("Could not read the clipboard with `pbpaste`. Use `--curl-file`, `--curl`, or pipe the cURL on stdin.");
+const CONNECT_CURL_FALLBACK = "Use `--curl-file`, `--curl`, or pipe the cURL on stdin.";
+
+function linuxClipboardInstallPlan() {
+  if (process.platform !== "linux") return null;
+  const wayland = Boolean(process.env.WAYLAND_DISPLAY);
+  const helper = wayland ? "wl-clipboard" : "xclip";
+  const candidates = [
+    { manager: "apt-get", args: ["sudo", "apt-get", "install", "-y", helper] },
+    { manager: "apt", args: ["sudo", "apt", "install", "-y", helper] },
+    { manager: "dnf", args: ["sudo", "dnf", "install", "-y", helper] },
+    { manager: "pacman", args: ["sudo", "pacman", "-S", "--needed", helper] },
+    { manager: "zypper", args: ["sudo", "zypper", "install", "-y", helper] },
+  ];
+  for (const candidate of candidates) {
+    try {
+      execFileSync("which", [candidate.manager], { stdio: "ignore" });
+      return { helper, installCommand: candidate.args };
+    } catch {
+      // Try the next package manager.
+    }
   }
+  return null;
+}
+
+async function maybeInstallLinuxClipboardHelper() {
+  const plan = linuxClipboardInstallPlan();
+  if (!plan || !process.stdin.isTTY) return false;
+  const commandText = plan.installCommand.join(" ");
+  const answer = (await promptSetupValue(`No Linux clipboard helper found. Install ${plan.helper} now with \`${commandText}\`? [y/N] `)).trim().toLowerCase();
+  if (!["y", "yes"].includes(answer)) return false;
+  const result = spawnSync(plan.installCommand[0], plan.installCommand.slice(1), { stdio: "inherit" });
+  return result.status === 0;
+}
+
+function clipboardCommands() {
+  return (
+    process.platform === "darwin"
+      ? [["pbpaste"]]
+      : process.platform === "win32"
+        ? [["powershell.exe", "-NoProfile", "-Command", "Get-Clipboard"]]
+        : [
+            ["wl-paste", "--no-newline"],
+            ["xclip", "-selection", "clipboard", "-out"],
+            ["xsel", "--clipboard", "--output"],
+          ]
+  );
+}
+
+function readClipboardOnce() {
+  const commands = clipboardCommands();
+  for (const [command, ...args] of commands) {
+    try {
+      const value = execFileSync(command, args, { encoding: "utf8", maxBuffer: 1024 * 1024 * 16 }).trim();
+      if (value) return value;
+    } catch {
+      // Try the next platform clipboard command.
+    }
+  }
+  return null;
+}
+
+async function readClipboard() {
+  const first = readClipboardOnce();
+  if (first) return first;
+  if (process.platform === "linux" && (await maybeInstallLinuxClipboardHelper())) {
+    const afterInstall = readClipboardOnce();
+    if (afterInstall) return afterInstall;
+  }
+  throw new Error(
+    process.platform === "linux"
+      ? `Could not read the clipboard. Install one clipboard helper such as \`wl-clipboard\`, \`xclip\`, or \`xsel\`, or ${CONNECT_CURL_FALLBACK}`
+      : `Could not read the clipboard. ${CONNECT_CURL_FALLBACK}`,
+  );
 }
 
 async function runSetup(argv) {

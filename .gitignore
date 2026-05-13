@@ -8,6 +8,13 @@ output/
 *.curl
 .env
 .env.*
+.npmrc
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
 
 # Logs
 npm-debug.log*

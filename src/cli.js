@@ -22,6 +22,37 @@ import {
 import { loadLocalHeaders, readCurlInputFile, writeLocalSetup } from "./local-config.js";
 
 const __filename = fileURLToPath(import.meta.url);
+const SETUP_FILTER = "/backend-api/f/conversation";
+
+function color(code, value) {
+  if (!process.stdout.isTTY || process.env.NO_COLOR) return value;
+  return `\x1b[${code}m${value}\x1b[0m`;
+}
+
+function setupTitle(title) {
+  console.log("");
+  console.log(color("1;36", `== ${title} ==`));
+}
+
+function setupSteps(steps, start = 1) {
+  for (const [index, step] of steps.entries()) {
+    console.log(`  ${start + index}. ${step}`);
+  }
+}
+
+function setupCopyBlock(label, value) {
+  console.log("");
+  console.log(color("1", `Copy this ${label}:`));
+  console.log("");
+  console.log(`  ${value}`);
+  console.log("");
+}
+
+async function waitForClipboard(label) {
+  const prompt = color("1;33", `Press Enter after copying ${label}. Do not paste it here. `);
+  await promptSetupValue(prompt);
+  return readClipboard();
+}
 
 function usage() {
   return `
@@ -77,62 +108,68 @@ function readClipboard() {
   }
 }
 
-async function readClipboardAfterEnter(instruction) {
-  console.log(instruction);
-  await promptSetupValue("Press Enter after you have copied it. Do not paste it here. ");
-  return readClipboard();
-}
-
 async function runSetup(argv) {
   let projectUrl = getFlag(argv, "--project-url", undefined);
   let curlText = getFlag(argv, "--curl", undefined);
   const curlFile = getFlag(argv, "--curl-file", undefined);
   if (curlFile) curlText = readCurlInputFile(curlFile);
+  const interactive = process.stdin.isTTY && !projectUrl && !curlText && !curlFile;
+  if (interactive) {
+    console.log(color("1", "\nChatGPT Project Runner setup"));
+    console.log("This setup reads copied values from your clipboard. Copy when instructed, then return here and press Enter.");
+  }
   if (!projectUrl && process.stdin.isTTY) {
-    console.log(
-      [
-        "ChatGPT Project setup:",
-        "1. Open ChatGPT and start creating a new Project.",
-        "2. Name the Project `Codex`.",
-        "3. Before creating it, click the settings button.",
-        "4. Set Project memory to project-only. This cannot be changed after the Project is created.",
-        "5. Create and open that Project in the browser.",
-      ].join("\n"),
-    );
-    projectUrl = await readClipboardAfterEnter("6. Copy the Project URL from the browser address bar.");
+    setupTitle("1. Create the ChatGPT Project");
+    setupSteps([
+      "Open ChatGPT and start creating a new Project.",
+      "Name the Project `Codex`.",
+      "Before creating it, click the settings button.",
+      "Set Project memory to project-only. This cannot be changed after the Project is created.",
+      "Create and open that Project in the browser.",
+      "Copy the Project URL from the browser address bar.",
+    ]);
+    projectUrl = await waitForClipboard("the Project URL");
   }
   if (!curlText && process.stdin.isTTY) {
-    console.log(
-      [
-        "",
-        "Authenticated cURL setup:",
-        "1. In the same ChatGPT Project page, right-click the page and click Inspect.",
-        "2. In DevTools, click the Network tab.",
-        "3. Click the clear network log button in the top-left of Network. It looks like a circle with a line through it.",
-        "4. Click the Network filter box and paste this exact filter: /backend-api/f/conversation",
-        "5. Send a short message in the Project, such as `setup test`.",
-        "6. A request named `conversation` should appear in the Network table.",
-        "7. Right-click the `conversation` request and choose Copy > Copy as cURL.",
-      ].join("\n"),
-    );
-    curlText = await readClipboardAfterEnter("8. After Copy as cURL, return here and press Enter. Do not paste the cURL into this terminal.");
+    setupTitle("2. Copy one authenticated cURL");
+    setupSteps([
+      "In the same ChatGPT Project page, right-click the page and click Inspect.",
+      "In DevTools, click the Network tab.",
+      "Click the clear network log button in the top-left of Network. It looks like a circle with a line through it.",
+      "Click the Network filter box.",
+    ]);
+    setupCopyBlock("Network filter", SETUP_FILTER);
+    setupSteps([
+      "Paste that filter into the Network filter box.",
+      "Send a short message in the Project, such as `setup test`.",
+      "A request named `conversation` should appear in the Network table.",
+      "Right-click the `conversation` request and choose Copy > Copy as cURL.",
+    ], 5);
+    curlText = await waitForClipboard("Copy as cURL");
   }
   if (!curlText && !process.stdin.isTTY) curlText = readFileSync(0, "utf8");
   if (!projectUrl) throw new Error("Missing project URL. Run `npm run setup -- --project-url <url>` when piping a cURL on stdin.");
   const status = writeLocalSetup({ projectUrl, curlText });
-  console.log(
-    JSON.stringify(
-      {
-        ready: status.ready,
-        authPath: status.auth.path,
-        configPath: status.config.path,
-        projectId: status.config.projectId,
-        next: "npm run capabilities",
-      },
-      null,
-      2,
-    ),
-  );
+  const summary = {
+    ready: status.ready,
+    authPath: status.auth.path,
+    configPath: status.config.path,
+    projectId: status.config.projectId,
+    next: "npm run capabilities",
+  };
+  if (!process.stdout.isTTY) {
+    console.log(JSON.stringify(summary, null, 2));
+    return;
+  }
+  setupTitle("Setup complete");
+  console.log(`  Ready: ${color("32", String(summary.ready))}`);
+  console.log(`  Project ID: ${summary.projectId}`);
+  console.log(`  Config: ${summary.configPath}`);
+  console.log(`  Auth: ${summary.authPath}`);
+  console.log("");
+  console.log(color("1", "Next:"));
+  console.log("  npm run capabilities");
+  console.log('  npm run ask -- --sync --prompt "Reply with exactly: clone works"');
 }
 
 async function runDirectApiMessage(argv) {

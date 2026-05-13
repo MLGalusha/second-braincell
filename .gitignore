@@ -6,6 +6,11 @@ node_modules/
 output/
 *.har
 *.curl
+*cookie*
+*cookies*
+*headers*
+chatgpt-*.txt
+openai-*.txt
 .env
 .env.*
 .npmrc

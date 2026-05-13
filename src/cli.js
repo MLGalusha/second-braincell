@@ -63,6 +63,7 @@ Usage:
   npm run chatgpt -- converse --prompt "Start a conversation..."
   npm run chatgpt -- chats
   npm run chatgpt -- search-chats "query"
+  npm run chatgpt -- chat-summary --search "query"
   npm run chatgpt -- project-instructions
   npm run chatgpt -- resume <chat-number|conversation-id|job-id> --prompt "..."
   npm run chatgpt -- transcript <chat-number|conversation-id|job-id>

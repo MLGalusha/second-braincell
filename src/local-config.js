@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { ROOT_DIR } from "./config.js";
 import { readJson, writeJson } from "./util.js";
@@ -104,6 +104,7 @@ export function writeLocalSetup({ projectUrl, curlText }) {
     conversationEndpoint: "https://chatgpt.com/backend-api/f/conversation",
     createdAt: new Date().toISOString(),
   });
+  chmodSync(LOCAL_CONFIG_PATH, 0o600);
   writeJson(LOCAL_AUTH_PATH, {
     version: 1,
     createdAt: new Date().toISOString(),
@@ -114,6 +115,7 @@ export function writeLocalSetup({ projectUrl, curlText }) {
     },
     headers: parsed.headers,
   });
+  chmodSync(LOCAL_AUTH_PATH, 0o600);
   return localSetupStatus();
 }
 

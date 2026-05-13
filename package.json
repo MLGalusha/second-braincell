@@ -6,6 +6,7 @@
     "chatgpt": "node src/cli.js",
     "setup": "node src/cli.js setup",
     "ask": "node src/cli.js ask",
+    "converse": "node src/cli.js converse",
     "capabilities": "node src/cli.js capabilities",
     "status": "node src/cli.js status",
     "verify-api": "node scripts/verify-api-endpoints.js",

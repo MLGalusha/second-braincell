@@ -17,6 +17,8 @@ Check setup first:
 npm run capabilities
 ```
 
+This prints a human-readable readiness summary. Use `npm run capabilities -- --detailed` when structured debug JSON is needed.
+
 If setup is missing, ask the user to run:
 
 ```bash
@@ -27,13 +29,15 @@ Setup is clipboard-based. Tell the user to create a new ChatGPT Project named `C
 
 ## Commands
 
-Send a text prompt:
+Send a text prompt or start a response-aware conversation:
 
 ```bash
-npm run ask -- --prompt "..."
+npm run converse -- --prompt "..."
 ```
 
-Continue the same ChatGPT conversation:
+Use `converse` as the default path for normal text chat, including one-question requests. It prints ChatGPT's response after each turn, keeps a combined transcript under `output/conversations/`, and continues the same ChatGPT thread until you end with a blank prompt, `/end`, `end`, `/done`, or `done`. If `converse` is run non-interactively with `--prompt`, it sends one turn and exits.
+
+For lower-level one-shot calls or scripted continuation, `ask` remains available:
 
 ```bash
 npm run ask -- --prompt "First message."
@@ -43,7 +47,7 @@ npm run ask -- --continue-job <latest-job-id> --prompt "Another follow-up."
 
 Use the most recent returned job id for each follow-up. The runner reuses the stored `conversation_id` and fetches the latest parent message id from ChatGPT before sending. If you already have a ChatGPT conversation id, use `--conversation-id <id>`; if you also know the exact parent node, use `--parent-message-id <id>`.
 
-When asked to "chat back and forth with ChatGPT", "have a conversation", "send a follow-up", or otherwise continue context, always use `--continue-job` after the first request. Do not simulate continuity by pasting a transcript into a new prompt, and do not put labels like `Codex:` and `ChatGPT:` into a new prompt as a substitute for threading.
+When asked to "chat back and forth with ChatGPT", "have a conversation", "send a follow-up", or otherwise continue context, prefer `npm run converse`. If using `ask` directly, always use `--continue-job` after the first request. Do not simulate continuity by pasting a transcript into a new prompt, and do not put labels like `Codex:` and `ChatGPT:` into a new prompt as a substitute for threading.
 
 ## Prompt Style
 
@@ -64,7 +68,7 @@ We see the usual problem: logs, metrics, and traces exist, but they are fragment
 Assume the stack is Datadog, Sentry, OpenTelemetry, and scattered product analytics. Give me a crisp final recommendation: one first-week plan, one metric that proves this is helping, and one anti-pattern to avoid.
 ```
 
-Use `--continue-job` for continuity; do not encode the turn number or conversation mechanics into the prompt.
+Use `converse` or `--continue-job` for continuity; do not encode the turn number or conversation mechanics into the prompt.
 
 Ask about a file:
 

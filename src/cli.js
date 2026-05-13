@@ -2,11 +2,11 @@
 import { spawn, execFileSync } from "node:child_process";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createJob, listJobs, loadJob, saveJob, updateJob } from "./jobs.js";
-import { IMAGES_DIR, JOBS_DIR } from "./config.js";
+import { IMAGES_DIR, JOBS_DIR, OUTPUT_DIR } from "./config.js";
 import { ensureDir, getFlag, getFlags, hasFlag, readTextArg, uniquePath } from "./util.js";
 import { DEFAULT_TEXT_MODEL, capabilities, resolveModelPreset } from "./model-presets.js";
 import {
@@ -53,6 +53,7 @@ Usage:
   npm run chatgpt -- setup
   npm run chatgpt -- ask --kind image --quality high --prompt "..."
   npm run chatgpt -- ask --kind deep-research --prompt "..."
+  npm run chatgpt -- converse --prompt "Start a conversation..."
   npm run chatgpt -- status <job-id>
   npm run chatgpt -- capabilities
   npm run chatgpt -- api-message --prompt "..."
@@ -78,12 +79,67 @@ Options:
   --continue-job JOB_ID
   --conversation-id CONVERSATION_ID
   --parent-message-id MESSAGE_ID
+  --transcript PATH
+  --max-turns N
   --sync
   --watch
   --notify
   --watch-interval-seconds N
   --watch-timeout-seconds N
 `.trim();
+}
+
+function checkmark(value) {
+  return value ? color("32", "✓") : color("31", "✗");
+}
+
+function featureLine(label, ready) {
+  return `  ${checkmark(ready)} ${label}`;
+}
+
+function formatHumanCapabilities(data) {
+  const lines = [];
+  const setup = data.setup;
+  const projectName = setup.config.projectUrl ? setup.config.projectUrl.split("/").filter(Boolean).at(-2) || "configured project" : null;
+
+  lines.push(color("1;36", "Second Braincell"));
+  lines.push("");
+  lines.push(`Status: ${setup.ready ? color("32", "ready") : color("31", "setup incomplete")}`);
+  if (setup.config.ready) {
+    lines.push(`Project: ${projectName || "configured"}`);
+    lines.push(`Project ID: ${setup.config.projectId}`);
+  }
+  lines.push("");
+
+  if (!setup.ready) {
+    lines.push("Missing:");
+    if (!setup.auth.ready) lines.push(featureLine(".local/auth.json", false));
+    if (!setup.config.ready) lines.push(featureLine(".local/config.json", false));
+    for (const hint of setup.hints || []) lines.push(`  - ${hint}`);
+    lines.push("");
+    lines.push("Next step:");
+    lines.push("  npm run setup");
+    lines.push("");
+  }
+
+  lines.push("Capabilities:");
+  lines.push(featureLine("Text conversations", data.readiness.message));
+  lines.push(featureLine("File and PDF questions", data.readiness.attachments));
+  lines.push(featureLine("Image generation: high", data.readiness.imageHigh));
+  lines.push(featureLine("Image generation: instant", data.readiness.imageInstant));
+  lines.push(featureLine("Deep Research", data.readiness.deepResearch));
+  lines.push("");
+
+  lines.push("Default commands:");
+  lines.push('  npm run converse -- --prompt "Have a conversation with ChatGPT about this decision."');
+  lines.push('  npm run ask -- --attach-file ./document.pdf --prompt "Answer questions about this file."');
+  lines.push('  npm run ask -- --kind image --prompt "A red cube on a white table."');
+  lines.push('  npm run ask -- --kind deep-research --prompt "Research this topic."');
+  lines.push("");
+  lines.push("Detailed JSON:");
+  lines.push("  npm run capabilities -- --detailed");
+
+  return lines.join("\n");
 }
 
 async function promptSetupValue(question) {
@@ -168,7 +224,7 @@ async function runSetup(argv) {
   console.log('  npm run ask -- --sync --prompt "Reply with exactly: clone works"');
 }
 
-async function runDirectApiMessage(argv) {
+async function runDirectApiMessage(argv, { silent = false } = {}) {
   const prompt = readTextArg(argv);
   const curlPath = getFlag(argv, "--curl", undefined);
   const model = getFlag(argv, "--model", undefined);
@@ -263,38 +319,34 @@ async function runDirectApiMessage(argv) {
       });
     }
 
-    console.log(
-      JSON.stringify(
-        {
-          id: job.id,
-          jobStatus: loadJob(job.id).status,
-          status: result.status,
-          ok: result.ok,
-          conversationId: result.conversationId ? ":conversation_id" : null,
-          responsePath: existsSync(responsePath) && outputKind !== "image" && !suppressInitialResponse ? responsePath : undefined,
-          response: outputKind === "image" || suppressInitialResponse ? undefined : result.responseText,
-          artifacts: loadJob(job.id).artifacts,
-          statusCommand: `npm run chatgpt -- status ${job.id}`,
-          watchStatusPath: resolve(JOBS_DIR, job.id, "watch-status.json"),
-          agentInstruction: isAsync
-            ? `Async ${kind} job submitted and background watcher started. Create a thread heartbeat automation with a ${kind === "image" ? "30-second" : "10-minute"} interval to report completion when available, then do not poll or wait unless explicitly asked.`
-            : undefined,
-          heartbeatAutomation: isAsync
-            ? {
-                requiredWhenAvailable: true,
-                kind: "heartbeat",
-                destination: "thread",
-                intervalSeconds: kind === "image" ? 30 : 600,
-                rrule: kind === "image" ? "FREQ=SECONDLY;INTERVAL=30" : "FREQ=MINUTELY;INTERVAL=10",
-                name: kind === "image" ? "Check ChatGPT image job" : "Check ChatGPT Deep Research job",
-                prompt: `In /Users/masongalusha/Workspace/projects/second-braincell, check Second Braincell job ${job.id} with npm run status -- ${job.id}. If it is complete, report the artifact path and render the image/report when possible. If it is still waiting, check again later without extra commentary.`,
-              }
-            : undefined,
-        },
-        null,
-        2,
-      ),
-    );
+    const payload = {
+      id: job.id,
+      jobStatus: loadJob(job.id).status,
+      status: result.status,
+      ok: result.ok,
+      conversationId: result.conversationId ? ":conversation_id" : null,
+      responsePath: existsSync(responsePath) && outputKind !== "image" && !suppressInitialResponse ? responsePath : undefined,
+      response: outputKind === "image" || suppressInitialResponse ? undefined : result.responseText,
+      artifacts: loadJob(job.id).artifacts,
+      statusCommand: `npm run chatgpt -- status ${job.id}`,
+      watchStatusPath: resolve(JOBS_DIR, job.id, "watch-status.json"),
+      agentInstruction: isAsync
+        ? `Async ${kind} job submitted and background watcher started. Create a thread heartbeat automation with a ${kind === "image" ? "30-second" : "10-minute"} interval to report completion when available, then do not poll or wait unless explicitly asked.`
+        : undefined,
+      heartbeatAutomation: isAsync
+        ? {
+            requiredWhenAvailable: true,
+            kind: "heartbeat",
+            destination: "thread",
+            intervalSeconds: kind === "image" ? 30 : 600,
+            rrule: kind === "image" ? "FREQ=SECONDLY;INTERVAL=30" : "FREQ=MINUTELY;INTERVAL=10",
+            name: kind === "image" ? "Check ChatGPT image job" : "Check ChatGPT Deep Research job",
+            prompt: `In /Users/masongalusha/Workspace/projects/second-braincell, check Second Braincell job ${job.id} with npm run status -- ${job.id}. If it is complete, report the artifact path and render the image/report when possible. If it is still waiting, check again later without extra commentary.`,
+          }
+        : undefined,
+    };
+    if (!silent) console.log(JSON.stringify(payload, null, 2));
+    return payload;
   } catch (error) {
     job.status = "failed";
     job.error = String(error.stack || error.message || error);
@@ -374,6 +426,100 @@ async function runAsk(argv) {
   }
 
   await runDirectApiMessage(applyModelPreset(nextArgv));
+}
+
+function transcriptDefaultPath() {
+  return resolve(OUTPUT_DIR, "conversations", `conversation_${new Date().toISOString().replace(/[:.]/g, "-")}.md`);
+}
+
+function appendTranscriptTurn(path, { turn, prompt, response, jobId, responsePath }) {
+  appendFileSync(
+    path,
+    [
+      `## Turn ${turn}`,
+      "",
+      "**User**",
+      "",
+      prompt.trim(),
+      "",
+      "**ChatGPT**",
+      "",
+      String(response || "").trim() || "(no response text)",
+      "",
+      `Job: \`${jobId}\``,
+      responsePath ? `Response file: \`${responsePath}\`` : null,
+      "",
+    ]
+      .filter((line) => line !== null)
+      .join("\n"),
+  );
+}
+
+async function runConverse(argv) {
+  const kind = getFlag(argv, "--kind", "message");
+  if (kind !== "message") throw new Error("converse currently supports text message conversations only.");
+
+  const transcriptPath = resolve(getFlag(argv, "--transcript", transcriptDefaultPath()));
+  ensureDir(dirname(transcriptPath));
+  writeFileSync(transcriptPath, "# ChatGPT Conversation\n\n");
+
+  const firstPrompt = getFlag(argv, "--prompt", undefined) || (hasFlag(argv, "--prompt-file") || hasFlag(argv, "--file") ? readTextArg(argv) : undefined);
+  if (!firstPrompt && !process.stdin.isTTY) throw new Error("Provide --prompt or --prompt-file when stdin is not interactive.");
+  const maxTurnsRaw = getFlag(argv, "--max-turns", undefined);
+  const defaultMaxTurns = firstPrompt && !process.stdin.isTTY ? 1 : Infinity;
+  const maxTurns = maxTurnsRaw === undefined ? defaultMaxTurns : Number(maxTurnsRaw);
+  if (!Number.isFinite(maxTurns) && maxTurnsRaw !== undefined) throw new Error("--max-turns must be a number");
+  if (maxTurns < 1) throw new Error("--max-turns must be at least 1");
+
+  const baseArgv = withoutFlags(argv, ["--prompt", "--prompt-file", "--file", "--transcript", "--max-turns", "--continue-job", "--kind"]);
+  const followupBaseArgv = withoutFlags(baseArgv, ["--attach-file"]);
+  const rl = createInterface({ input, output });
+  let prompt = firstPrompt || (await rl.question("First prompt: "));
+  let continueJobId = getFlag(argv, "--continue-job", undefined);
+  let turn = 1;
+
+  try {
+    while (prompt.trim() && !["/end", "end", "/done", "done"].includes(prompt.trim().toLowerCase()) && turn <= maxTurns) {
+      const turnArgv = [...(turn === 1 ? baseArgv : followupBaseArgv), "--prompt", prompt];
+      if (continueJobId) turnArgv.push("--continue-job", continueJobId);
+      const result = await runDirectApiMessage(applyModelPreset(turnArgv), { silent: true });
+      appendTranscriptTurn(transcriptPath, {
+        turn,
+        prompt,
+        response: result.response,
+        jobId: result.id,
+        responsePath: result.responsePath,
+      });
+
+      console.log("");
+      console.log(color("1;36", `Turn ${turn} complete`));
+      console.log(`Job: ${result.id}`);
+      console.log(`Transcript: ${transcriptPath}`);
+      console.log("");
+      console.log(result.response || "(no response text)");
+      console.log("");
+
+      if (!result.ok) throw new Error(`Turn ${turn} failed with status ${result.status}`);
+      continueJobId = result.id;
+      turn += 1;
+      if (turn > maxTurns) break;
+      prompt = await rl.question("Next prompt (blank or /end to end): ");
+    }
+  } finally {
+    rl.close();
+  }
+
+  console.log(
+    JSON.stringify(
+      {
+        completedTurns: turn - 1,
+        latestJobId: continueJobId,
+        transcriptPath,
+      },
+      null,
+      2,
+    ),
+  );
 }
 
 function startApiWatcher(jobId, { notify = false, intervalSeconds, timeoutSeconds } = {}) {
@@ -457,12 +603,22 @@ async function main() {
     }
 
     if (command === "capabilities") {
-      console.log(JSON.stringify(capabilities(), null, 2));
+      const data = capabilities();
+      if (hasFlag(argv, "--detailed") || hasFlag(argv, "--json")) {
+        console.log(JSON.stringify(data, null, 2));
+      } else {
+        console.log(formatHumanCapabilities(data));
+      }
       return;
     }
 
     if (command === "ask") {
       await runAsk(argv);
+      return;
+    }
+
+    if (command === "converse") {
+      await runConverse(argv);
       return;
     }
 

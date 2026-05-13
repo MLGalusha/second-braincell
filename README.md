@@ -1,21 +1,25 @@
 # Second Braincell
 
-Give your Codex agent a second braincell: a direct path into your own ChatGPT Project for work ChatGPT is already good at.
+Give your Codex agent a second braincell: a direct path into your own ChatGPT Project for conversations, research, files, images, and model responses.
 
-Second Braincell lets Codex hand off tasks to ChatGPT for:
+Second Braincell lets Codex use ChatGPT as a real second brain. Your agent can ask ChatGPT a one-off question, have a multi-turn conversation about a product or engineering problem, hand off Deep Research, generate images, or ask questions about uploaded files and PDFs.
 
-- Deep Research reports
-- image generation
-- file and PDF question-answering with ChatGPT's stronger upload/RAG system
-- normal ChatGPT model responses from a Project you control
+Use it when you want Codex to:
 
-This is useful because Codex can call this local runner instead of trying to recreate those workflows itself. For large PDFs and file-heavy questions, ChatGPT's uploaded-file retrieval is often a better fit than iterative search from Codex. ChatGPT image generation and Deep Research also run through your ChatGPT account, not your Codex rate limit.
+- have a conversation with ChatGPT about an architecture decision
+- ask ChatGPT to brainstorm product directions and push back on weak ideas
+- use ChatGPT's uploaded-file retrieval to review a PDF or file
+- run a Deep Research report through your ChatGPT account
+- generate an image with ChatGPT
+- get a normal ChatGPT model response from a Project you control
+
+This is useful because Codex can call this local runner instead of trying to recreate those workflows itself. For conversational exploration, Codex can keep a real ChatGPT thread open and bring the transcript back to you. For large PDFs and file-heavy questions, ChatGPT's uploaded-file retrieval is often a better fit than iterative search from Codex. ChatGPT image generation and Deep Research also run through your ChatGPT account, not your Codex rate limit.
 
 Second Braincell uses browser-observed ChatGPT web API endpoints from your already-authenticated browser session. It does not use Playwright or Chrome UI automation.
 
 ## How It Works
 
-Second Braincell is a local Node.js CLI that your Codex agent can call with `npm run ask`.
+Second Braincell is a local Node.js CLI that your Codex agent can call with `npm run converse` for normal text conversations and `npm run ask` for lower-level jobs.
 
 Setup captures two local-only pieces of information:
 
@@ -63,6 +67,12 @@ Check readiness:
 npm run capabilities
 ```
 
+This prints a clean setup and feature summary. For the full debug JSON, run:
+
+```bash
+npm run capabilities -- --detailed
+```
+
 ## Use It From Codex
 
 After setup is complete, go to your Codex agent and tell it:
@@ -74,13 +84,70 @@ Use Second Braincell to ask ChatGPT: Reply with exactly: agent works
 
 If your agent supports installing repo skills, install the skill from `skills/chatgpt-direct-api/SKILL.md`. Otherwise, telling the agent to read that file is enough.
 
+## Agent Prompting
+
+When asking your agent to use Second Braincell, describe the conversation or task naturally:
+
+```text
+Use Second Braincell to have a conversation with ChatGPT about whether we should split this service.
+```
+
+```text
+Ask ChatGPT to brainstorm three product directions, challenge the weakest assumptions, and bring back the transcript.
+```
+
+The agent should send ChatGPT natural messages, not meta prompts with labels like `Turn 1`, `Turn 2`, `Codex:`, or `acting on behalf of`. Conversation continuity is handled by `converse` or `--continue-job`, not by encoding the mechanics into the prompt text.
+
+## Personalize The ChatGPT Project
+
+Second Braincell sends requests into a ChatGPT Project you control, so you can edit that Project's instructions to shape how ChatGPT behaves for your agent.
+
+For example, you can make ChatGPT act as a skeptical product partner, a senior architecture reviewer, a concise research assistant, or a document-analysis specialist. Those standing instructions apply whenever Codex uses Second Braincell with that Project.
+
+Example Project instructions:
+
+```text
+You are my product strategy reviewer. Be direct, skeptical, and practical. Push back on vague ideas, identify hidden assumptions, and always end with the next concrete decision I need to make.
+```
+
+```text
+When discussing software architecture, optimize for maintainability and operational simplicity. Prefer boring technology unless there is a clear reason not to. Call out migration risk, observability needs, and rollback plans.
+```
+
+```text
+When reviewing PDFs or documents, extract the answer first, then cite the relevant section or page if available. Separate confirmed facts from assumptions.
+```
+
+```text
+Respond in this format:
+- Recommendation
+- Why it matters
+- Risks
+- Next action
+Keep each section short.
+```
+
+This makes Second Braincell more useful than a generic ChatGPT call: your Codex agent can use a Project that already knows the role, tone, and decision style you want.
+
 ## Commands
 
-Text:
+Default text chat and conversations:
+
+```bash
+npm run converse -- --prompt "Pick a practical topic and ask me one focused question."
+```
+
+`converse` is the response-aware path for normal text chat. It sends your message, prints ChatGPT's response, and, when run interactively, waits for the next prompt while continuing the same ChatGPT thread. End with a blank prompt, `/end`, `end`, `/done`, or `done`.
+
+It writes a combined transcript under `output/conversations/` by default. Use `--transcript ./path/to/transcript.md` to choose a path. Use `--max-turns 5` when you want a hard stop.
+
+One-shot or scripted text request:
 
 ```bash
 npm run ask -- --prompt "Explain this in one paragraph."
 ```
+
+Use `ask` when you want lower-level JSON output, scripted continuation with `--continue-job`, file attachments, image generation, Deep Research, or compatibility with the async job flow.
 
 File or PDF question:
 

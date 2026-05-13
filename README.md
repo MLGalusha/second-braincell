@@ -42,19 +42,15 @@ No need to paste the URL. The setup command reads it from your clipboard after y
 1. Keep the same `Codex` Project open in ChatGPT.
 2. Right-click the ChatGPT page and click Inspect.
 3. In DevTools, click the Network tab.
-4. Click the clear network log button in the top-left of Network. It looks like a circle with a line through it.
-5. Click the Network filter box and paste this exact filter:
-
-```text
-/backend-api/f/conversation
-```
-
-6. Send a short message in the Project, such as `setup test`.
-7. A request named `conversation` should appear in the Network table.
-8. Right-click the `conversation` request.
-9. Choose Copy > Copy as cURL.
-10. Go back to the terminal.
-11. Press Enter when setup asks for the authenticated cURL.
+4. Click the clear network log button in the top-left of Network: ⊘
+5. Click the Network filter box directly below that clear button.
+6. Paste this filter into that box: `/backend-api/f/conversation`
+7. Go back to your ChatGPT Project and send a short message, such as `setup test`.
+8. A request named `conversation` should appear in the Network table. Its icon is an orange square with `<>` inside it.
+9. Right-click the `conversation` request.
+10. Choose Copy > Copy as cURL.
+11. Go back to the terminal.
+12. Press Enter when setup asks for the authenticated cURL.
 
 No need to paste the cURL. DevTools cURLs are often multiline, so the setup command reads the copied cURL from your clipboard after you press Enter.
 
@@ -74,6 +70,17 @@ Check readiness:
 ```bash
 npm run capabilities
 ```
+
+### Use It From Your Agent
+
+After setup is complete, go to your agent in this cloned repo and tell it:
+
+```text
+Read and follow skills/chatgpt-direct-api/SKILL.md.
+Use the ChatGPT direct API runner to ask: Reply with exactly: agent works
+```
+
+If your agent supports installing repo skills, install the skill from `skills/chatgpt-direct-api/SKILL.md`. Otherwise, telling the agent to read that file is enough.
 
 ## Commands
 

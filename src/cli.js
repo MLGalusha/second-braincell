@@ -40,14 +40,6 @@ function setupSteps(steps, start = 1) {
   }
 }
 
-function setupCopyBlock(label, value) {
-  console.log("");
-  console.log(color("1", `Copy this ${label}:`));
-  console.log("");
-  console.log(`  ${value}`);
-  console.log("");
-}
-
 async function waitForClipboard(label) {
   const prompt = color("1;33", `Copy ${label}, then press Enter. No need to paste. `);
   await promptSetupValue(prompt);
@@ -135,16 +127,13 @@ async function runSetup(argv) {
     setupSteps([
       "In the same ChatGPT Project page, right-click the page and click Inspect.",
       "In DevTools, click the Network tab.",
-      "Click the clear network log button in the top-left of Network. It looks like a circle with a line through it.",
-      "Click the Network filter box.",
-    ]);
-    setupCopyBlock("Network filter", SETUP_FILTER);
-    setupSteps([
-      "Paste that filter into the Network filter box.",
-      "Send a short message in the Project, such as `setup test`.",
-      "A request named `conversation` should appear in the Network table.",
+      "Click the clear network log button in the top-left of Network: ⊘",
+      "Click the Network filter box directly below that clear button.",
+      `Paste this filter into that box: ${SETUP_FILTER}`,
+      "Go back to your ChatGPT Project and send a short message, such as `setup test`.",
+      "A request named `conversation` should appear in the Network table. Its icon is an orange square with <> inside it.",
       "Right-click the `conversation` request and choose Copy > Copy as cURL.",
-    ], 5);
+    ]);
     curlText = await waitForClipboard("Copy as cURL");
   }
   if (!curlText && !process.stdin.isTTY) curlText = readFileSync(0, "utf8");
@@ -168,7 +157,11 @@ async function runSetup(argv) {
   console.log(`  Auth: ${summary.authPath}`);
   console.log("");
   console.log(color("1", "Next:"));
-  console.log("  npm run capabilities");
+  console.log("  1. Go to your agent in this cloned repo.");
+  console.log("  2. Tell it: Read and follow `skills/chatgpt-direct-api/SKILL.md`.");
+  console.log('  3. Test it: Use the ChatGPT direct API runner to ask "Reply with exactly: agent works".');
+  console.log("");
+  console.log(color("1", "Manual smoke test:"));
   console.log('  npm run ask -- --sync --prompt "Reply with exactly: clone works"');
 }
 

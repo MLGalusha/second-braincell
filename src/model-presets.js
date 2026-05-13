@@ -75,6 +75,7 @@ export function capabilities() {
         description: "Submit a ChatGPT web API job with agent-friendly defaults.",
         defaultAsync: true,
         kinds: ["message", "image", "deep-research"],
+        supportsAttachments: true,
       },
       status: {
         description: "Refresh and print a job record.",
@@ -92,6 +93,10 @@ export function capabilities() {
       deepResearch: {
         async: true,
         curlTemplate: "/tmp/chatgpt-send-deep-research.curl",
+      },
+      attachments: {
+        supported: true,
+        flag: "--attach-file",
       },
     },
     templates: {

@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createJob, listJobs, loadJob, saveJob, updateJob } from "./jobs.js";
 import { IMAGES_DIR, JOBS_DIR } from "./config.js";
-import { ensureDir, getFlag, hasFlag, readTextArg, uniquePath } from "./util.js";
+import { ensureDir, getFlag, getFlags, hasFlag, readTextArg, uniquePath } from "./util.js";
 import { DEFAULT_TEXT_MODEL, capabilities, resolveModelPreset } from "./model-presets.js";
 import {
   downloadGeneratedImage,
@@ -15,6 +15,7 @@ import {
   latestAssistantTextFromConversation,
   loadCurlTemplate,
   sendApiMessage,
+  uploadFile,
 } from "./chatgpt-api.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -44,6 +45,7 @@ Options:
   --thinking-effort VALUE
   --kind message|image|deep-research
   --quality high|instant
+  --attach-file PATH (repeatable)
   --sync
   --watch
   --notify
@@ -60,14 +62,30 @@ async function runDirectApiMessage(argv) {
   const modelPreset = getFlag(argv, "--model-preset", undefined);
   const outputKind = getFlag(argv, "--output-kind", "text");
   const jobKind = getFlag(argv, "--job-kind", outputKind === "image" ? "api-image" : "api-message");
+  const attachFiles = getFlags(argv, "--attach-file");
   const { job } = createJob({
     kind: jobKind,
     prompt,
-    options: { curlPath, model, thinkingEffort, modelPreset, outputKind, jobKind },
+    options: { curlPath, model, thinkingEffort, modelPreset, outputKind, jobKind, attachFiles },
   });
 
   try {
-    const result = await sendApiMessage({ prompt, curlPath, model, thinkingEffort, fetchFinalText: outputKind !== "image" });
+    const template = loadCurlTemplate(curlPath);
+    const attachments = [];
+    for (const file of attachFiles) {
+      attachments.push(await uploadFile({ headers: template.headers, filePath: file }));
+    }
+    if (attachments.length) {
+      job.artifacts.attachments = attachments.map((attachment) => ({
+        id: ":file_id",
+        name: attachment.name,
+        size: attachment.size,
+        mimeType: attachment.mimeType,
+        processEvents: attachment.processEvents,
+      }));
+      saveJob(job);
+    }
+    const result = await sendApiMessage({ prompt, curlPath, model, thinkingEffort, attachments, fetchFinalText: outputKind !== "image", forceFetchFinalText: attachments.length > 0 && !hasFlag(argv, "--async") });
     job.status = result.ok && !result.errorSeen ? (hasFlag(argv, "--async") ? "submitted" : "completed") : "failed";
     job.statusCode = result.status;
     job.contentType = result.contentType;

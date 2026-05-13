@@ -1,5 +1,5 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, resolve } from "node:path";
+import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { basename, extname, resolve } from "node:path";
 
 export function ensureDir(path) {
   mkdirSync(path, { recursive: true });
@@ -101,4 +101,33 @@ export function displayPath(path) {
 
 export function fileLabel(path) {
   return basename(path);
+}
+
+export function fileInfo(path) {
+  const absolutePath = resolve(path);
+  const stat = statSync(absolutePath);
+  return {
+    path: absolutePath,
+    name: basename(absolutePath),
+    size: stat.size,
+    type: mimeFromPath(absolutePath),
+  };
+}
+
+export function mimeFromPath(path) {
+  const ext = extname(path).toLowerCase();
+  if (ext === ".pdf") return "application/pdf";
+  if (ext === ".txt") return "text/plain";
+  if (ext === ".md") return "text/markdown";
+  if (ext === ".csv") return "text/csv";
+  if (ext === ".json") return "application/json";
+  if (ext === ".png") return "image/png";
+  if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
+  if (ext === ".webp") return "image/webp";
+  if (ext === ".gif") return "image/gif";
+  if (ext === ".xlsx") return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  if (ext === ".xls") return "application/vnd.ms-excel";
+  if (ext === ".docx") return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  if (ext === ".doc") return "application/msword";
+  return "application/octet-stream";
 }

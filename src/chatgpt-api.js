@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { PROJECT_URL } from "./config.js";
+import { fileInfo } from "./util.js";
 
 export const DEFAULT_API_CURL_PATH = "/tmp/chatgpt-send.curl";
 
@@ -45,7 +46,7 @@ export function loadCurlTemplate(path = DEFAULT_API_CURL_PATH) {
   return parsed;
 }
 
-export function prepareMessageBody(body, prompt, { model, thinkingEffort } = {}) {
+export function prepareMessageBody(body, prompt, { model, thinkingEffort, attachments = [] } = {}) {
   const next = structuredClone(body);
   const message = next.messages?.[0];
   if (!message) throw new Error("Captured send body has no messages[0].");
@@ -54,6 +55,17 @@ export function prepareMessageBody(body, prompt, { model, thinkingEffort } = {})
   message.content = message.content || {};
   message.content.content_type = "text";
   message.content.parts = [prompt];
+  if (attachments.length) {
+    message.metadata = message.metadata && typeof message.metadata === "object" ? message.metadata : {};
+    message.metadata.attachments = attachments.map((attachment) => ({
+      id: attachment.id,
+      size: attachment.size,
+      name: attachment.name,
+      file_token_size: attachment.fileTokenSize ?? 0,
+      source: attachment.source || "upload",
+      is_big_paste: false,
+    }));
+  }
   if (message.metadata && typeof message.metadata === "object") delete message.metadata.timestamp_;
 
   if (model) next.model = model;
@@ -61,6 +73,98 @@ export function prepareMessageBody(body, prompt, { model, thinkingEffort } = {})
   next.timezone = next.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
   next.timezone_offset_min = new Date().getTimezoneOffset();
   return next;
+}
+
+function apiHeaders(headers, accept = "application/json") {
+  return { ...headers, accept, "content-type": "application/json" };
+}
+
+async function parseJsonOrThrow(response, label) {
+  const text = await response.text();
+  let json = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    throw new Error(`${label} returned non-JSON response: ${response.status}`);
+  }
+  if (!response.ok) throw new Error(`${label} failed: ${response.status} ${JSON.stringify(json)}`);
+  return json;
+}
+
+export function parseUploadProcessStream(text) {
+  const events = [];
+  let final = null;
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.startsWith("data:")) continue;
+    const payload = line.slice(5).trim();
+    if (!payload || payload === "[DONE]") continue;
+    try {
+      const json = JSON.parse(payload);
+      events.push(json);
+      final = json;
+    } catch {
+      events.push({ raw: payload });
+    }
+  }
+  return { events, final };
+}
+
+export async function uploadFile({ headers, filePath, useCase = "multimodal", indexForRetrieval = true } = {}) {
+  const info = fileInfo(filePath);
+  const createResponse = await fetch("https://chatgpt.com/backend-api/files", {
+    method: "POST",
+    headers: apiHeaders(headers),
+    body: JSON.stringify({
+      file_name: info.name,
+      file_size: info.size,
+      reset_rate_limits: false,
+      timezone_offset_min: new Date().getTimezoneOffset(),
+      use_case: useCase,
+    }),
+  });
+  const created = await parseJsonOrThrow(createResponse, "create upload");
+  const fileId = created.file_id || created.id;
+  const uploadUrl = created.upload_url;
+  if (!fileId || !uploadUrl) throw new Error("Create upload response did not include file_id and upload_url.");
+
+  const bytes = readFileSync(info.path);
+  const rawResponse = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: {
+      "content-type": info.type,
+      "x-ms-blob-type": "BlockBlob",
+    },
+    body: bytes,
+  });
+  if (!rawResponse.ok) throw new Error(`raw upload failed: ${rawResponse.status} ${await rawResponse.text()}`);
+
+  const processResponse = await fetch("https://chatgpt.com/backend-api/files/process_upload_stream", {
+    method: "POST",
+    headers: apiHeaders(headers, "text/event-stream"),
+    body: JSON.stringify({
+      entry_surface: "composer",
+      file_id: fileId,
+      file_name: info.name,
+      index_for_retrieval: indexForRetrieval,
+      use_case: useCase,
+    }),
+  });
+  const processText = await processResponse.text();
+  if (!processResponse.ok) throw new Error(`process upload failed: ${processResponse.status} ${processText}`);
+  const processed = parseUploadProcessStream(processText);
+
+  return {
+    id: fileId,
+    name: info.name,
+    size: info.size,
+    mimeType: info.type,
+    source: "upload",
+    createStatus: createResponse.status,
+    rawStatus: rawResponse.status,
+    processStatus: processResponse.status,
+    processEvents: processed.events.length,
+    fileTokenSize: processed.final?.file_token_size ?? processed.final?.fileTokenSize ?? 0,
+  };
 }
 
 function extractTextFromJson(value) {
@@ -250,10 +354,10 @@ export async function downloadGeneratedImage({ headers, assetPointer, outPath })
   return { bytes, contentType };
 }
 
-export async function sendApiMessage({ prompt, curlPath = DEFAULT_API_CURL_PATH, model, thinkingEffort, fetchFinalText = true } = {}) {
+export async function sendApiMessage({ prompt, curlPath = DEFAULT_API_CURL_PATH, model, thinkingEffort, attachments = [], fetchFinalText = true, forceFetchFinalText = false } = {}) {
   if (!prompt) throw new Error("sendApiMessage requires a prompt.");
   const template = loadCurlTemplate(curlPath);
-  const body = prepareMessageBody(JSON.parse(template.bodyRaw), prompt, { model, thinkingEffort });
+  const body = prepareMessageBody(JSON.parse(template.bodyRaw), prompt, { model, thinkingEffort, attachments });
   const response = await fetch(template.url, {
     method: "POST",
     headers: {
@@ -266,7 +370,7 @@ export async function sendApiMessage({ prompt, curlPath = DEFAULT_API_CURL_PATH,
   });
   const streamText = await response.text();
   const stream = parseEventStream(streamText);
-  if (fetchFinalText && !stream.responseText && response.ok && !stream.errorSeen) {
+  if (fetchFinalText && response.ok && !stream.errorSeen && (forceFetchFinalText || !stream.responseText)) {
     stream.responseText = await fetchLatestAssistantText(template.headers, stream.conversationId);
   }
   return {

@@ -9,6 +9,7 @@ This project does not store credentials. It expects request templates copied fro
 ```bash
 npm run capabilities
 npm run ask -- --prompt "Explain this in one paragraph."
+npm run ask -- --attach-file ./document.pdf --prompt "Answer a question about this file."
 npm run ask -- --kind image --quality high --prompt "A red cube on a white table."
 npm run ask -- --kind deep-research --prompt "Research this topic and produce a concise report."
 npm run status -- <job-id>
@@ -54,6 +55,24 @@ npm run ask -- --kind image --quality instant --prompt "..."
 ```
 
 The runner polls conversation history for `image_asset_pointer`, resolves `/backend-api/files/:file_id/download`, and saves the image locally.
+
+## File And PDF Questions
+
+Attach files with `--attach-file`:
+
+```bash
+npm run ask -- --attach-file ./spec.pdf --prompt "Who are the acceptable pump manufacturers?"
+npm run ask -- --attach-file ./a.pdf --attach-file ./b.xlsx --prompt "Compare these files."
+```
+
+The runner uses the ChatGPT file flow:
+
+1. `POST /backend-api/files`
+2. `PUT` bytes to the returned signed upload URL
+3. `POST /backend-api/files/process_upload_stream`
+4. Attach the returned file id to the message body
+
+Signed upload URLs and file ids are not printed in normal output.
 
 ## Deep Research
 

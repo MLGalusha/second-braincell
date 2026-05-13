@@ -106,13 +106,16 @@ async function runSetup(argv) {
       [
         "",
         "Authenticated cURL setup:",
-        "1. In the same ChatGPT Project, open DevTools > Network.",
-        "2. Send a short message in the Project.",
-        "3. Click the request named `conversation` or `/backend-api/f/conversation`.",
-        "4. Right-click it and choose Copy > Copy as cURL.",
+        "1. In the same ChatGPT Project page, right-click the page and click Inspect.",
+        "2. In DevTools, click the Network tab.",
+        "3. Click the clear network log button in the top-left of Network. It looks like a circle with a line through it.",
+        "4. Click the Network filter box and paste this exact filter: /backend-api/f/conversation",
+        "5. Send a short message in the Project, such as `setup test`.",
+        "6. A request named `conversation` should appear in the Network table.",
+        "7. Right-click the `conversation` request and choose Copy > Copy as cURL.",
       ].join("\n"),
     );
-    curlText = await readClipboardAfterEnter("5. Copy that cURL. It may be multiline; do not paste it into this terminal.");
+    curlText = await readClipboardAfterEnter("8. After Copy as cURL, return here and press Enter. Do not paste the cURL into this terminal.");
   }
   if (!curlText && !process.stdin.isTTY) curlText = readFileSync(0, "utf8");
   if (!projectUrl) throw new Error("Missing project URL. Run `npm run setup -- --project-url <url>` when piping a cURL on stdin.");

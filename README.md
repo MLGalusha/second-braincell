@@ -40,14 +40,21 @@ Do not paste the URL. The setup command reads it from your clipboard.
 ### Step 3: Copy One Authenticated cURL
 
 1. Keep the same `Codex` Project open in ChatGPT.
-2. Open browser DevTools.
-3. Open the Network tab.
-4. Send a short message in the Project, such as `setup test`.
-5. In the Network tab, find the request named `conversation` or `/backend-api/f/conversation`.
-6. Right-click that request.
-7. Choose Copy > Copy as cURL.
-8. Go back to the terminal.
-9. Press Enter when setup asks for the authenticated cURL.
+2. Right-click the ChatGPT page and click Inspect.
+3. In DevTools, click the Network tab.
+4. Click the clear network log button in the top-left of Network. It looks like a circle with a line through it.
+5. Click the Network filter box and paste this exact filter:
+
+```text
+/backend-api/f/conversation
+```
+
+6. Send a short message in the Project, such as `setup test`.
+7. A request named `conversation` should appear in the Network table.
+8. Right-click the `conversation` request.
+9. Choose Copy > Copy as cURL.
+10. Go back to the terminal.
+11. Press Enter when setup asks for the authenticated cURL.
 
 Do not paste the cURL. DevTools cURLs are often multiline and can break terminal input. The setup command reads the copied cURL from your clipboard.
 

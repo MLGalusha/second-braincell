@@ -60,6 +60,8 @@ npm run status -- <job-id>
 
 Normal text chat is synchronous by default. Image generation and Deep Research are async by default.
 
-For image jobs, check every 30 seconds for up to 5 minutes, then report if it is still waiting. For Deep Research jobs, check every 5 minutes for up to 2 hours.
+Default agent behavior for image generation and Deep Research is fire-and-forget: run the submit command, create a thread heartbeat automation when available, confirm the job was submitted, then end the response or move to the user's next task. Creating the heartbeat is required in Codex sessions with automation support. Use a 30-second heartbeat for image jobs and a 5-minute heartbeat for Deep Research jobs. Do not use the Deep Research 5-minute heartbeat schedule for image jobs. The submit command starts the background watcher.
 
-Use the printed status command or `npm run watch-api-job -- <job-id> --once` to check progress manually.
+Do not run `status`, `watch-api-job`, sleep loops, polling loops, or wait for the artifact unless the user explicitly asks to wait, check progress, retrieve the result, debug the watcher, or use `--sync`.
+
+Use the printed status command or `npm run watch-api-job -- <job-id> --once` only when a manual check is explicitly requested.

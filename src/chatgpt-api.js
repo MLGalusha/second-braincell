@@ -198,26 +198,6 @@ export function parseEventStream(text) {
   let errorSeen = false;
   let finishSeen = false;
   let conversationId = null;
-  const findConversationId = (value, depth = 0) => {
-    if (!value || depth > 6) return null;
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        const found = findConversationId(item, depth + 1);
-        if (found) return found;
-      }
-      return null;
-    }
-    if (typeof value === "object") {
-      for (const [key, child] of Object.entries(value)) {
-        if (/^conversation_id$/.test(key) && typeof child === "string" && child.length > 8) return child;
-      }
-      for (const child of Object.values(value)) {
-        const found = findConversationId(child, depth + 1);
-        if (found) return found;
-      }
-    }
-    return null;
-  };
   for (const line of text.split(/\r?\n/)) {
     if (!line.startsWith("data:")) continue;
     const payload = line.slice(5).trim();
@@ -240,6 +220,92 @@ export function parseEventStream(text) {
   const meaningful = chunks.filter((chunk) => chunk && !/^(finished_successfully|finished_partial_completion)$/.test(chunk.trim()));
   const responseText = meaningful.at(-1) || meaningful.join("").trim();
   return { responseText, conversationId, finishSeen, errorSeen, eventTypes: Object.fromEntries([...eventTypes.entries()].sort()) };
+}
+
+function findConversationId(value, depth = 0) {
+  if (!value || depth > 6) return null;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findConversationId(item, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (typeof value === "object") {
+    for (const [key, child] of Object.entries(value)) {
+      if (/^conversation_id$/.test(key) && typeof child === "string" && child.length > 8) return child;
+    }
+    for (const child of Object.values(value)) {
+      const found = findConversationId(child, depth + 1);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+function parseEventLine(line, state) {
+  if (!line.startsWith("data:")) return;
+  const payload = line.slice(5).trim();
+  if (payload === "[DONE]") {
+    state.finishSeen = true;
+    return;
+  }
+  if (!payload) return;
+  try {
+    const json = JSON.parse(payload);
+    const type = json.type || json.event || "json";
+    state.eventTypes.set(type, (state.eventTypes.get(type) || 0) + 1);
+    if (json.error || type === "error") state.errorSeen = true;
+    state.conversationId = state.conversationId || findConversationId(json);
+    state.chunks.push(...extractTextFromJson(json));
+  } catch {
+    state.eventTypes.set("non-json", (state.eventTypes.get("non-json") || 0) + 1);
+  }
+}
+
+async function readEventStreamUntilConversationId(response, { timeoutMs = 8000 } = {}) {
+  if (!response.body) return parseEventStream(await response.text());
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  const state = {
+    chunks: [],
+    eventTypes: new Map(),
+    errorSeen: false,
+    finishSeen: false,
+    conversationId: null,
+  };
+  let buffer = "";
+  const timeout = setTimeout(() => {
+    reader.cancel().catch(() => {});
+  }, timeoutMs);
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() || "";
+      for (const line of lines) parseEventLine(line, state);
+      if (state.conversationId || state.errorSeen) {
+        await reader.cancel().catch(() => {});
+        break;
+      }
+    }
+    buffer += decoder.decode();
+    if (buffer) parseEventLine(buffer, state);
+  } catch {
+    // A timeout/cancel after the server accepted the request is enough for async submit.
+  } finally {
+    clearTimeout(timeout);
+  }
+  const meaningful = state.chunks.filter((chunk) => chunk && !/^(finished_successfully|finished_partial_completion)$/.test(chunk.trim()));
+  return {
+    responseText: meaningful.at(-1) || meaningful.join("").trim(),
+    conversationId: state.conversationId,
+    finishSeen: state.finishSeen,
+    errorSeen: state.errorSeen,
+    eventTypes: Object.fromEntries([...state.eventTypes.entries()].sort()),
+  };
 }
 
 export function projectIdFromUrl(url = loadLocalConfig({ required: false })?.projectUrl || process.env.CHATGPT_PROJECT_URL || "") {
@@ -365,6 +431,7 @@ export async function sendApiMessage({
   forceFetchFinalText = false,
   kind = "message",
   quality = "high",
+  submitOnly = false,
 } = {}) {
   if (!prompt) throw new Error("sendApiMessage requires a prompt.");
   const localConfig = loadLocalConfig({ required: !curlPath });
@@ -392,8 +459,7 @@ export async function sendApiMessage({
     body: JSON.stringify(body),
     redirect: "manual",
   });
-  const streamText = await response.text();
-  const stream = parseEventStream(streamText);
+  const stream = submitOnly && response.ok ? await readEventStreamUntilConversationId(response) : parseEventStream(await response.text());
   if (fetchFinalText && response.ok && !stream.errorSeen && (forceFetchFinalText || !stream.responseText)) {
     stream.responseText = await fetchLatestAssistantText(headers, stream.conversationId);
   }

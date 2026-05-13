@@ -210,6 +210,7 @@ async function runDirectApiMessage(argv) {
       attachments,
       fetchFinalText: outputKind !== "image" && kind !== "deep-research",
       forceFetchFinalText: outputKind !== "image" && kind !== "deep-research" && !isAsync,
+      submitOnly: isAsync,
       kind,
       quality,
     });
@@ -247,6 +248,20 @@ async function runDirectApiMessage(argv) {
           artifacts: loadJob(job.id).artifacts,
           statusCommand: `npm run chatgpt -- status ${job.id}`,
           watchStatusPath: resolve(JOBS_DIR, job.id, "watch-status.json"),
+          agentInstruction: isAsync
+            ? `Async ${kind} job submitted and background watcher started. Create a thread heartbeat automation with a ${kind === "image" ? "30-second" : "5-minute"} interval to report completion when available, then do not poll or wait unless explicitly asked.`
+            : undefined,
+          heartbeatAutomation: isAsync
+            ? {
+                requiredWhenAvailable: true,
+                kind: "heartbeat",
+                destination: "thread",
+                intervalSeconds: kind === "image" ? 30 : 300,
+                rrule: kind === "image" ? "FREQ=SECONDLY;INTERVAL=30" : "FREQ=MINUTELY;INTERVAL=5",
+                name: kind === "image" ? "Check ChatGPT image job" : "Check ChatGPT Deep Research job",
+                prompt: `In /Users/masongalusha/Workspace/projects/second-braincell, check Second Braincell job ${job.id} with npm run status -- ${job.id}. If it is complete, report the artifact path and render the image/report when possible. If it is still waiting, check again later without extra commentary.`,
+              }
+            : undefined,
         },
         null,
         2,
@@ -362,7 +377,7 @@ export async function updateApiJobStatus(job) {
     job.artifacts.image = imagePath;
     job.artifacts.imageContentType = downloaded.contentType;
     job.artifacts.chatTitle = history.title;
-    return updateJob(job, { status: "completed", asyncStatus: history.async_status || null });
+    return updateJob(job, { status: "completed", asyncStatus: history.async_status || null, message: undefined });
   }
 
   if (job.kind === "api-deep-research") {

@@ -7,7 +7,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createJob, listJobs, loadJob, saveJob, updateJob } from "./jobs.js";
 import { IMAGES_DIR, JOBS_DIR, OUTPUT_DIR } from "./config.js";
-import { ensureDir, getFlag, getFlags, hasFlag, readTextArg, uniquePath } from "./util.js";
+import { displayPath, ensureDir, getFlag, getFlags, hasFlag, readTextArg, slugify, uniquePath } from "./util.js";
 import { DEFAULT_TEXT_MODEL, capabilities, resolveModelPreset } from "./model-presets.js";
 import {
   downloadGeneratedImage,
@@ -15,6 +15,7 @@ import {
   fetchConversation,
   findImageAssetPointers,
   latestAssistantTextFromConversation,
+  listProjectConversations,
   loadCurlTemplate,
   sendApiMessage,
   uploadFile,
@@ -54,6 +55,9 @@ Usage:
   npm run chatgpt -- ask --kind image --quality high --prompt "..."
   npm run chatgpt -- ask --kind deep-research --prompt "..."
   npm run chatgpt -- converse --prompt "Start a conversation..."
+  npm run chatgpt -- chats
+  npm run chatgpt -- resume <chat-number|conversation-id|job-id> --prompt "..."
+  npm run chatgpt -- transcript <chat-number|conversation-id|job-id>
   npm run chatgpt -- status <job-id>
   npm run chatgpt -- capabilities
   npm run chatgpt -- api-message --prompt "..."
@@ -80,6 +84,8 @@ Options:
   --conversation-id CONVERSATION_ID
   --parent-message-id MESSAGE_ID
   --transcript PATH
+  --out PATH
+  --limit N
   --max-turns N
   --sync
   --watch
@@ -132,6 +138,9 @@ function formatHumanCapabilities(data) {
 
   lines.push("Default commands:");
   lines.push('  npm run converse -- --prompt "Have a conversation with ChatGPT about this decision."');
+  lines.push("  npm run chats");
+  lines.push("  npm run resume -- 1");
+  lines.push("  npm run transcript -- 1");
   lines.push('  npm run ask -- --attach-file ./document.pdf --prompt "Answer questions about this file."');
   lines.push('  npm run ask -- --kind image --prompt "A red cube on a white table."');
   lines.push('  npm run ask -- --kind deep-research --prompt "Research this topic."');
@@ -140,6 +149,82 @@ function formatHumanCapabilities(data) {
   lines.push("  npm run capabilities -- --detailed");
 
   return lines.join("\n");
+}
+
+function formatDate(value) {
+  if (!value) return "unknown";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function truncate(value, length = 72) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (text.length <= length) return text;
+  return `${text.slice(0, Math.max(0, length - 1)).trimEnd()}…`;
+}
+
+function conversationTitle(chat) {
+  return chat?.title || chat?.snippet || "Untitled chat";
+}
+
+function sanitizeChatSummary(chat) {
+  return {
+    id: chat.id,
+    title: chat.title || null,
+    create_time: chat.create_time || null,
+    update_time: chat.update_time || null,
+    is_archived: Boolean(chat.is_archived),
+    is_temporary_chat: Boolean(chat.is_temporary_chat),
+    memory_scope: chat.memory_scope || null,
+    async_status: chat.async_status || null,
+    snippet: chat.snippet || null,
+  };
+}
+
+function formatChatList(chats) {
+  const lines = [color("1;36", "Recent ChatGPT Project Chats"), ""];
+  if (!chats.length) {
+    lines.push("No chats found.");
+    return lines.join("\n");
+  }
+  for (const [index, chat] of chats.entries()) {
+    lines.push(`${index + 1}. ${conversationTitle(chat)}`);
+    lines.push(`   id: ${chat.id}`);
+    lines.push(`   updated: ${formatDate(chat.update_time || chat.create_time)}`);
+    if (chat.snippet) lines.push(`   snippet: ${truncate(chat.snippet, 96)}`);
+    lines.push("");
+  }
+  lines.push("Resume:");
+  lines.push("  npm run resume -- 1");
+  lines.push("  npm run resume -- <conversation-id>");
+  return lines.join("\n").trimEnd();
+}
+
+function formatJobList(jobs) {
+  const lines = [color("1;36", "Second Braincell Jobs"), ""];
+  if (!jobs.length) {
+    lines.push("No jobs found.");
+    return lines.join("\n");
+  }
+  for (const [index, job] of jobs.entries()) {
+    lines.push(`${index + 1}. ${job.id}`);
+    lines.push(`   kind: ${job.kind}`);
+    lines.push(`   status: ${job.status}`);
+    lines.push(`   created: ${formatDate(job.createdAt)}`);
+    if (job.conversationId) lines.push(`   conversation: ${job.conversationId}`);
+    if (job.responseLength) lines.push(`   response: ${job.responseLength} chars`);
+    lines.push("");
+  }
+  lines.push("JSON:");
+  lines.push("  npm run chatgpt -- jobs --json");
+  return lines.join("\n").trimEnd();
 }
 
 async function promptSetupValue(question) {
@@ -455,6 +540,68 @@ function appendTranscriptTurn(path, { turn, prompt, response, jobId, responsePat
   );
 }
 
+function conversationMessages(history) {
+  return Object.values(history.mapping || {})
+    .map((node) => node?.message)
+    .filter((message) => {
+      if (!message?.author?.role) return false;
+      if (!["user", "assistant"].includes(message.author.role)) return false;
+      if (message.metadata?.is_visually_hidden_from_conversation) return false;
+      if (message.metadata?.chatgpt_sdk_suppressed_response) return false;
+      if (message.metadata?.tool_invoked_message || message.metadata?.tool_invoking_message) return false;
+      return Boolean((message.content?.parts || []).some((part) => typeof part === "string" && part.trim()));
+    })
+    .sort((a, b) => (a.create_time || 0) - (b.create_time || 0));
+}
+
+function transcriptFromConversation(history, conversationId) {
+  const title = history.title || "ChatGPT Conversation";
+  const lines = [`# ${title}`, "", `Conversation ID: \`${conversationId}\``, ""];
+  for (const message of conversationMessages(history)) {
+    const role = message.author.role === "assistant" ? "ChatGPT" : "User";
+    const text = (message.content?.parts || []).filter((part) => typeof part === "string").join("\n").trim();
+    if (!text) continue;
+    lines.push(`## ${role}`);
+    lines.push("");
+    lines.push(text);
+    lines.push("");
+  }
+  return lines.join("\n").trimEnd() + "\n";
+}
+
+function transcriptPathFor(history, conversationId, explicitPath) {
+  if (explicitPath) return resolve(explicitPath);
+  const title = slugify(history.title || conversationId, "conversation").replace(/\s+/g, "-").toLowerCase();
+  return uniquePath(resolve(OUTPUT_DIR, "conversations"), title, ".md");
+}
+
+async function recentChats(limit) {
+  return listProjectConversations(loadLocalHeaders(), { limit });
+}
+
+async function resolveConversationSelector(selector, { limit = 30 } = {}) {
+  if (!selector) throw new Error("Expected a chat number, ChatGPT conversation id, or Second Braincell job id.");
+
+  if (/^\d+$/.test(selector)) {
+    const chats = await recentChats(limit);
+    const chat = chats[Number(selector) - 1];
+    if (!chat) throw new Error(`No recent chat at position ${selector}. Run \`npm run chats\` to see available chats.`);
+    return { conversationId: chat.id, source: "recent-chat", chat };
+  }
+
+  if (existsSync(jobPathForSelector(selector))) {
+    const job = loadJob(selector);
+    if (!job.conversationId) throw new Error(`Job ${selector} has no ChatGPT conversation id.`);
+    return { conversationId: job.conversationId, source: "job", job };
+  }
+
+  return { conversationId: selector, source: "conversation-id" };
+}
+
+function jobPathForSelector(selector) {
+  return resolve(JOBS_DIR, selector, "job.json");
+}
+
 async function runConverse(argv) {
   const kind = getFlag(argv, "--kind", "message");
   if (kind !== "message") throw new Error("converse currently supports text message conversations only.");
@@ -520,6 +667,64 @@ async function runConverse(argv) {
       2,
     ),
   );
+}
+
+async function runChats(argv) {
+  const limit = Number(getFlag(argv, "--limit", 20));
+  if (!Number.isFinite(limit) || limit < 1) throw new Error("--limit must be a positive number");
+  const chats = await recentChats(limit);
+  if (hasFlag(argv, "--json") || hasFlag(argv, "--detailed")) {
+    console.log(JSON.stringify(chats.map(sanitizeChatSummary), null, 2));
+  } else {
+    console.log(formatChatList(chats));
+  }
+}
+
+function splitSelectorArg(argv, command) {
+  const index = argv.findIndex((arg) => !String(arg).startsWith("--"));
+  if (index === -1) throw new Error(`${command} requires a chat number, ChatGPT conversation id, or Second Braincell job id.`);
+  return {
+    selector: argv[index],
+    rest: [...argv.slice(0, index), ...argv.slice(index + 1)],
+  };
+}
+
+async function runResume(argv) {
+  const { selector, rest } = splitSelectorArg(argv, "resume");
+  const resolved = await resolveConversationSelector(selector, { limit: Number(getFlag(rest, "--limit", 30)) || 30 });
+  await runConverse([...rest, "--conversation-id", resolved.conversationId]);
+}
+
+async function runTranscript(argv) {
+  const { selector, rest } = splitSelectorArg(argv, "transcript");
+  const resolved = await resolveConversationSelector(selector, { limit: Number(getFlag(rest, "--limit", 30)) || 30 });
+  const history = await fetchConversation(loadLocalHeaders(), resolved.conversationId);
+  const markdown = transcriptFromConversation(history, resolved.conversationId);
+
+  if (hasFlag(rest, "--print")) {
+    console.log(markdown.trimEnd());
+    return;
+  }
+
+  const outPath = transcriptPathFor(history, resolved.conversationId, getFlag(rest, "--out", undefined));
+  ensureDir(dirname(outPath));
+  writeFileSync(outPath, markdown);
+  const payload = {
+    conversationId: resolved.conversationId,
+    title: history.title || null,
+    messages: conversationMessages(history).length,
+    transcriptPath: outPath,
+    displayPath: displayPath(outPath),
+  };
+  if (hasFlag(rest, "--json") || hasFlag(rest, "--detailed")) {
+    console.log(JSON.stringify(payload, null, 2));
+  } else {
+    console.log(color("1;36", "Transcript exported"));
+    console.log("");
+    console.log(`Title: ${payload.title || "Untitled chat"}`);
+    console.log(`Messages: ${payload.messages}`);
+    console.log(`Path: ${payload.displayPath}`);
+  }
 }
 
 function startApiWatcher(jobId, { notify = false, intervalSeconds, timeoutSeconds } = {}) {
@@ -622,6 +827,21 @@ async function main() {
       return;
     }
 
+    if (command === "chats") {
+      await runChats(argv);
+      return;
+    }
+
+    if (command === "resume") {
+      await runResume(argv);
+      return;
+    }
+
+    if (command === "transcript") {
+      await runTranscript(argv);
+      return;
+    }
+
     if (command === "api-message") {
       await runDirectApiMessage(argv);
       return;
@@ -648,7 +868,12 @@ async function main() {
     }
 
     if (command === "jobs") {
-      console.log(JSON.stringify(listJobs(Number(getFlag(argv, "--limit", 30))), null, 2));
+      const jobs = listJobs(Number(getFlag(argv, "--limit", 30)));
+      if (hasFlag(argv, "--json") || hasFlag(argv, "--detailed")) {
+        console.log(JSON.stringify(jobs, null, 2));
+      } else {
+        console.log(formatJobList(jobs));
+      }
       return;
     }
 

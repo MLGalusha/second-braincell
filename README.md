@@ -141,6 +141,24 @@ npm run converse -- --prompt "Pick a practical topic and ask me one focused ques
 
 It writes a combined transcript under `output/conversations/` by default. Use `--transcript ./path/to/transcript.md` to choose a path. Use `--max-turns 5` when you want a hard stop.
 
+List recent ChatGPT Project chats:
+
+```bash
+npm run chats
+```
+
+Resume a previous ChatGPT Project chat by recent-chat number, conversation id, or local job id:
+
+```bash
+npm run resume -- 1 --prompt "Pick this back up and give me the next decision."
+```
+
+Export a previous ChatGPT Project chat to Markdown:
+
+```bash
+npm run transcript -- 1
+```
+
 One-shot or scripted text request:
 
 ```bash
@@ -174,11 +192,20 @@ Refresh a job:
 npm run status -- <job-id>
 ```
 
+List local Second Braincell jobs:
+
+```bash
+npm run chatgpt -- jobs
+```
+
+Use `--json` with `chats`, `jobs`, or `transcript` when you need structured debug output.
+
 Text chat is synchronous by default. Image generation and Deep Research are async by default: they submit quickly, create a job under `output/jobs/`, start a watcher, and print the status command plus watcher status path. Agents should treat these async jobs as fire-and-forget: submit the job, create a thread heartbeat automation when available, report the job id/status path if useful, then stop or continue with other work. Creating the heartbeat is required in Codex sessions with automation support. Image jobs use a 30-second heartbeat; Deep Research jobs use a 10-minute heartbeat. Use `--sync` for image or Deep Research only when you want the initial command to wait, and only poll manually when progress or retrieval is explicitly requested.
 
 ## Output
 
 - Text and Deep Research: `output/jobs/<job-id>/response.md`
+- Conversation transcripts: `output/conversations/<name>.md`
 - Images: `output/images/<job-id>.png`
 - Job metadata: `output/jobs/<job-id>/job.json`
 - Watcher status: `output/jobs/<job-id>/watch-status.json`

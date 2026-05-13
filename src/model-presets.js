@@ -86,8 +86,29 @@ export function capabilities() {
         kinds: ["message", "image", "deep-research"],
         supportsAttachments: true,
       },
+      converse: {
+        description: "Start or continue a response-aware text conversation and write a combined transcript.",
+        supportsContinuation: true,
+        transcriptDefault: "output/conversations/",
+      },
+      chats: {
+        description: "List recent ChatGPT Project conversations.",
+        defaultOutput: "human",
+        detailedFlag: "--json",
+      },
+      resume: {
+        description: "Resume a previous ChatGPT Project conversation by recent-chat number, conversation id, or job id.",
+      },
+      transcript: {
+        description: "Export a ChatGPT Project conversation to Markdown by recent-chat number, conversation id, or job id.",
+      },
       status: {
         description: "Refresh and print a job record.",
+      },
+      jobs: {
+        description: "List local Second Braincell jobs.",
+        defaultOutput: "human",
+        detailedFlag: "--json",
       },
       result: {
         description: "Print a saved job record.",

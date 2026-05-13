@@ -314,6 +314,23 @@ export function projectIdFromUrl(url = loadLocalConfig({ required: false })?.pro
   return url.match(/\/g\/(g-p-[0-9a-f]+)(?:-|\/|$)/i)?.[1] || null;
 }
 
+export async function listProjectConversations(headers, { limit = 20 } = {}) {
+  const projectId = projectIdFromUrl();
+  if (!projectId) throw new Error("No ChatGPT Project ID configured. Run `npm run setup` first.");
+  const jsonHeaders = { ...headers, accept: "application/json" };
+  const items = [];
+  let cursor = "0";
+  while (items.length < limit && cursor !== null && cursor !== undefined) {
+    const list = await fetch(`https://chatgpt.com/backend-api/gizmos/${encodeURIComponent(projectId)}/conversations?cursor=${encodeURIComponent(cursor)}`, {
+      headers: jsonHeaders,
+    }).then((response) => response.json());
+    items.push(...(list.items || []));
+    if (!list.cursor || list.cursor === cursor) break;
+    cursor = list.cursor;
+  }
+  return items.slice(0, limit);
+}
+
 export async function fetchLatestAssistantText(headers, conversationId) {
   let id = conversationId;
   const jsonHeaders = { ...headers, accept: "application/json" };

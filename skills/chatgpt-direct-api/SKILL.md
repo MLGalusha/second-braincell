@@ -37,6 +37,24 @@ npm run converse -- --prompt "..."
 
 Use `converse` as the default path for normal text chat, including one-question requests. It prints ChatGPT's response after each turn, keeps a combined transcript under `output/conversations/`, and continues the same ChatGPT thread until you end with a blank prompt, `/end`, `end`, `/done`, or `done`. If `converse` is run non-interactively with `--prompt`, it sends one turn and exits.
 
+List recent ChatGPT Project chats:
+
+```bash
+npm run chats
+```
+
+Resume a previous ChatGPT Project chat by recent-chat number, conversation id, or local job id:
+
+```bash
+npm run resume -- 1 --prompt "Pick this back up."
+```
+
+Export a previous ChatGPT Project chat to Markdown:
+
+```bash
+npm run transcript -- 1
+```
+
 For lower-level one-shot calls or scripted continuation, `ask` remains available:
 
 ```bash

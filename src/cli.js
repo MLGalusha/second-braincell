@@ -377,12 +377,13 @@ async function runSetup(argv) {
 async function runDirectApiMessage(argv, { silent = false } = {}) {
   const prompt = readTextArg(argv);
   const curlPath = getFlag(argv, "--curl", undefined);
-  const model = getFlag(argv, "--model", undefined);
-  const thinkingEffort = getFlag(argv, "--thinking-effort", undefined);
+  let model = getFlag(argv, "--model", undefined);
+  let thinkingEffort = getFlag(argv, "--thinking-effort", undefined);
   const continueJobId = getFlag(argv, "--continue-job", undefined);
   let conversationId = getFlag(argv, "--conversation-id", undefined);
   const parentMessageId = getFlag(argv, "--parent-message-id", undefined);
-  const modelPreset = getFlag(argv, "--model-preset", undefined);
+  let modelPreset = getFlag(argv, "--model-preset", undefined);
+  const modelSelection = getFlag(argv, "--model-selection", undefined);
   const outputKind = getFlag(argv, "--output-kind", "text");
   const jobKind = getFlag(argv, "--job-kind", outputKind === "image" ? "api-image" : "api-message");
   const kind = getFlag(argv, "--kind", jobKind === "api-deep-research" ? "deep-research" : outputKind === "image" ? "image" : "message");
@@ -403,6 +404,7 @@ async function runDirectApiMessage(argv, { silent = false } = {}) {
       conversationId: conversationId ? ":conversation_id" : undefined,
       parentMessageId: parentMessageId ? ":parent_message_id" : undefined,
       modelPreset,
+      modelSelection,
       outputKind,
       jobKind,
       kind,
@@ -434,20 +436,43 @@ async function runDirectApiMessage(argv, { silent = false } = {}) {
       }));
       saveJob(job);
     }
-    const result = await sendApiMessage({
-      prompt,
-      curlPath,
-      model,
-      thinkingEffort,
-      attachments,
-      conversationId,
-      parentMessageId,
-      fetchFinalText: outputKind !== "image" && kind !== "deep-research",
-      forceFetchFinalText: outputKind !== "image" && kind !== "deep-research" && !isAsync,
-      submitOnly: isAsync,
-      kind,
-      quality,
-    });
+    let result = null;
+    const attempts = modelSelection === "best" ? modelAttemptsForBest({ model, thinkingEffort, modelPreset }) : [{ model, thinkingEffort, modelPreset }];
+    const fallbackLog = [];
+    for (const attempt of attempts) {
+      model = attempt.model;
+      thinkingEffort = attempt.thinkingEffort;
+      modelPreset = attempt.modelPreset;
+      result = await sendApiMessage({
+        prompt,
+        curlPath,
+        model,
+        thinkingEffort,
+        attachments,
+        conversationId,
+        parentMessageId,
+        fetchFinalText: outputKind !== "image" && kind !== "deep-research",
+        forceFetchFinalText: outputKind !== "image" && kind !== "deep-research" && !isAsync,
+        submitOnly: isAsync,
+        kind,
+        quality,
+      });
+      if (result.ok && !result.errorSeen) {
+        markModelCapability({ modelPreset, thinkingEffort, model, available: true, status: result.status });
+        break;
+      }
+      if (isModelUnavailableResult(result)) {
+        markModelCapability({ modelPreset, thinkingEffort, model, available: false, status: result.status });
+        fallbackLog.push({ modelPreset, thinkingEffort, status: result.status });
+        if (modelSelection === "best") continue;
+      }
+      break;
+    }
+    if (!result) throw new Error("No model attempt was made.");
+    if (fallbackLog.length) job.modelFallbacks = fallbackLog;
+    job.options.model = model;
+    job.options.thinkingEffort = thinkingEffort;
+    job.options.modelPreset = modelPreset;
     job.status = result.ok && !result.errorSeen ? (isAsync ? "submitted" : "completed") : "failed";
     job.statusCode = result.status;
     job.contentType = result.contentType;
@@ -456,6 +481,11 @@ async function runDirectApiMessage(argv, { silent = false } = {}) {
     job.errorSeen = result.errorSeen;
     job.eventTypes = result.eventTypes;
     job.responseLength = result.responseText?.length || 0;
+    const modelUnavailableMessage =
+      modelSelection === "best" && fallbackLog.some((entry) => entry.modelPreset === "pro")
+        ? modelUnavailableMessageForResult({ ok: false, status: fallbackLog.find((entry) => entry.modelPreset === "pro")?.status }, { modelPreset: "pro", modelSelection })
+        : modelUnavailableMessageForResult(result, { modelPreset, modelSelection });
+    if (modelUnavailableMessage) job.message = modelUnavailableMessage;
     if (curlPath) job.options.curlPath = curlPath;
     saveJob(job);
     const responsePath = resolve(JOBS_DIR, job.id, "response.md");
@@ -477,6 +507,8 @@ async function runDirectApiMessage(argv, { silent = false } = {}) {
       conversationId: result.conversationId ? ":conversation_id" : null,
       responsePath: existsSync(responsePath) && outputKind !== "image" && !suppressInitialResponse ? responsePath : undefined,
       response: outputKind === "image" || suppressInitialResponse ? undefined : result.responseText,
+      message: loadJob(job.id).message,
+      modelFallbacks: loadJob(job.id).modelFallbacks,
       artifacts: loadJob(job.id).artifacts,
       statusCommand: `npm run chatgpt -- status ${job.id}`,
       watchStatusPath: resolve(JOBS_DIR, job.id, "watch-status.json"),
@@ -583,10 +615,65 @@ function resolveBestModelFromCache() {
   return BEST_MODEL_ORDER[0];
 }
 
+function isModelUnavailableResult(result) {
+  return Boolean(result && !result.ok && [401, 403, 422].includes(result.status));
+}
+
+function keyForResolvedModel({ modelPreset, thinkingEffort } = {}) {
+  return modelKey({ modelName: modelPreset, reasoning: thinkingEffort });
+}
+
+function markModelCapability({ modelPreset, thinkingEffort, model, available, status }) {
+  if (!modelPreset) return;
+  const cache = loadModelCapabilities() || { results: {} };
+  const key = keyForResolvedModel({ modelPreset, thinkingEffort });
+  cache.results = cache.results || {};
+  cache.results[key] = {
+    ...(cache.results[key] || {}),
+    modelName: modelPreset,
+    reasoning: thinkingEffort || undefined,
+    key,
+    label: modelPreset,
+    model: model || null,
+    thinkingEffort: thinkingEffort || null,
+    available,
+    status,
+    checkedAt: nowIsoForCli(),
+  };
+  cache.checkedAt = nowIsoForCli();
+  cache.cachePath = MODEL_CAPABILITIES_PATH;
+  cache.best = resolveBestModelFromResults(Object.values(cache.results));
+  saveModelCapabilities(cache);
+}
+
+function modelUnavailableMessageForResult(result, { modelPreset, modelSelection } = {}) {
+  if (!isModelUnavailableResult(result) || modelPreset !== "pro") return undefined;
+  if (modelSelection === "best") {
+    return "GPT-5.5 Pro was unavailable for this signed-in ChatGPT account, so best-mode tried the next available checked model.";
+  }
+  return "GPT-5.5 Pro is not available for this signed-in ChatGPT account. Run `npm run model-check -- --model pro`, change or upgrade the ChatGPT account, or use `--model thinking --reasoning extended`.";
+}
+
+function modelAttemptsForBest(current = {}) {
+  const seen = new Set();
+  const attempts = [];
+  const add = ({ modelName, reasoning }) => {
+    const resolved = resolveModelPreset({ modelName, reasoning, allowRawModel: false });
+    const key = keyForResolvedModel({ modelPreset: resolved.presetName, thinkingEffort: resolved.thinkingEffort });
+    if (seen.has(key)) return;
+    seen.add(key);
+    attempts.push({ model: resolved.model, thinkingEffort: resolved.thinkingEffort, modelPreset: resolved.presetName });
+  };
+  if (current.modelPreset) add({ modelName: current.modelPreset, reasoning: current.thinkingEffort });
+  for (const candidate of BEST_MODEL_ORDER) add(candidate);
+  return attempts;
+}
+
 function applyModelPreset(argv, { defaultModel = DEFAULT_TEXT_MODEL } = {}) {
   let requestedModel = getFlag(argv, "--model", defaultModel);
   let requestedReasoning = getFlag(argv, "--reasoning", getFlag(argv, "--thinking-effort", undefined));
-  if (normalizeModelName(requestedModel) === "best") {
+  const requestedWasBest = normalizeModelName(requestedModel) === "best";
+  if (requestedWasBest) {
     const best = resolveBestModelFromCache();
     requestedModel = best.modelName;
     requestedReasoning = requestedReasoning || best.reasoning;
@@ -596,6 +683,7 @@ function applyModelPreset(argv, { defaultModel = DEFAULT_TEXT_MODEL } = {}) {
   if (resolved.model) next = ensureFlag(next, "--model", resolved.model);
   if (resolved.thinkingEffort) next = ensureFlag(next, "--thinking-effort", resolved.thinkingEffort);
   if (resolved.presetName) next = ensureFlag(next, "--model-preset", resolved.presetName);
+  if (requestedWasBest) next = ensureFlag(next, "--model-selection", "best");
   return next;
 }
 

@@ -92,12 +92,14 @@ async function runSetup(argv) {
     console.log(
       [
         "ChatGPT Project setup:",
-        "1. Open ChatGPT and create a Project named `Codex`.",
-        "2. In Project settings, set memory to project-only.",
-        "3. Open that Project in the browser.",
+        "1. Open ChatGPT and start creating a new Project.",
+        "2. Name the Project `Codex`.",
+        "3. Before creating it, click the settings button.",
+        "4. Set Project memory to project-only. This cannot be changed after the Project is created.",
+        "5. Create and open that Project in the browser.",
       ].join("\n"),
     );
-    projectUrl = await readClipboardAfterEnter("4. Copy the Project URL from the browser address bar.");
+    projectUrl = await readClipboardAfterEnter("6. Copy the Project URL from the browser address bar.");
   }
   if (!curlText && process.stdin.isTTY) {
     console.log(

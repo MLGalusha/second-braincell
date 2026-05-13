@@ -22,10 +22,11 @@ The interactive setup is clipboard-based. You copy each item, then press Enter i
 ### Step 1: Create The ChatGPT Project
 
 1. Open ChatGPT in your browser.
-2. Create a Project named `Codex`.
-3. Open the Project settings.
-4. Set memory to project-only.
-5. Open the `Codex` Project.
+2. Start creating a new Project.
+3. Name the Project `Codex`.
+4. Before creating it, click the settings button.
+5. Set Project memory to project-only. This cannot be changed after the Project is created.
+6. Create and open the `Codex` Project.
 
 ### Step 2: Copy The Project URL
 

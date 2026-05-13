@@ -82,16 +82,42 @@ function apiHeaders(headers, accept = "application/json") {
   return { ...headers, accept, "content-type": "application/json" };
 }
 
+export function isAuthExpiredStatus(status) {
+  return status === 401 || status === 403;
+}
+
+export function authRefreshMessage() {
+  return "ChatGPT session credentials appear to be expired or unauthorized. Run `npm run connect` and copy a fresh authenticated Project cURL from DevTools.";
+}
+
+export class AuthExpiredError extends Error {
+  constructor(label, status, detail) {
+    super(`${label} failed: ${status}. ${authRefreshMessage()}`);
+    this.name = "AuthExpiredError";
+    this.code = "CHATGPT_AUTH_EXPIRED";
+    this.status = status;
+    this.detail = detail;
+    this.recoverable = true;
+  }
+}
+
 async function parseJsonOrThrow(response, label) {
   const text = await response.text();
   let json = null;
   try {
     json = text ? JSON.parse(text) : null;
   } catch {
+    if (isAuthExpiredStatus(response.status)) throw new AuthExpiredError(label, response.status, text);
     throw new Error(`${label} returned non-JSON response: ${response.status}`);
   }
+  if (isAuthExpiredStatus(response.status)) throw new AuthExpiredError(label, response.status, json);
   if (!response.ok) throw new Error(`${label} failed: ${response.status} ${JSON.stringify(json)}`);
   return json;
+}
+
+async function fetchJsonOrThrow(url, options, label) {
+  const response = await fetch(url, options);
+  return parseJsonOrThrow(response, label);
 }
 
 export function parseUploadProcessStream(text) {
@@ -153,6 +179,7 @@ export async function uploadFile({ headers, filePath, useCase = "my_files", inde
     }),
   });
   const processText = await processResponse.text();
+  if (isAuthExpiredStatus(processResponse.status)) throw new AuthExpiredError("process upload", processResponse.status, processText);
   if (!processResponse.ok) throw new Error(`process upload failed: ${processResponse.status} ${processText}`);
   const processed = parseUploadProcessStream(processText);
 
@@ -311,12 +338,12 @@ async function readEventStreamUntilConversationId(response, { timeoutMs = 8000 }
 }
 
 export function projectIdFromUrl(url = loadLocalConfig({ required: false })?.projectUrl || process.env.CHATGPT_PROJECT_URL || "") {
-  return url.match(/\/g\/(g-p-[0-9a-f]+)(?:-|\/|$)/i)?.[1] || null;
+  return url.match(/\/g\/(g-p-[a-z0-9]+)(?:-|\/|$)/i)?.[1] || null;
 }
 
 export async function listProjectConversations(headers, { limit = 20 } = {}) {
   const projectId = projectIdFromUrl();
-  if (!projectId) throw new Error("No ChatGPT Project ID configured. Run `npm run setup` first.");
+  if (!projectId) throw new Error("No ChatGPT Project ID configured. Run `npm run connect` first.");
   return listConversationsForProject(headers, projectId, { limit });
 }
 
@@ -325,9 +352,11 @@ export async function listConversationsForProject(headers, projectId, { limit = 
   const items = [];
   let cursor = "0";
   while (items.length < limit && cursor !== null && cursor !== undefined) {
-    const list = await fetch(`https://chatgpt.com/backend-api/gizmos/${encodeURIComponent(projectId)}/conversations?cursor=${encodeURIComponent(cursor)}`, {
-      headers: jsonHeaders,
-    }).then((response) => response.json());
+    const list = await fetchJsonOrThrow(
+      `https://chatgpt.com/backend-api/gizmos/${encodeURIComponent(projectId)}/conversations?cursor=${encodeURIComponent(cursor)}`,
+      { headers: jsonHeaders },
+      "List project conversations",
+    );
     items.push(...(list.items || []));
     if (!list.cursor || list.cursor === cursor) break;
     cursor = list.cursor;
@@ -341,8 +370,7 @@ export async function listAllConversations(headers, { limit = 20, offset = 0 } =
     `https://chatgpt.com/backend-api/conversations?offset=${encodeURIComponent(offset)}&limit=${encodeURIComponent(limit)}&order=updated`,
     { headers: jsonHeaders },
   );
-  const json = await response.json();
-  if (!response.ok) throw new Error(`List conversations failed: ${response.status} ${JSON.stringify(json)}`);
+  const json = await parseJsonOrThrow(response, "List conversations");
   return (json.items || []).slice(0, limit);
 }
 
@@ -353,19 +381,16 @@ export async function searchConversations(headers, { query, limit = 10, projectI
   const response = await fetch(`https://chatgpt.com/backend-api/conversations/search?${params.toString()}`, {
     headers: { ...headers, accept: "application/json" },
   });
-  const json = await response.json();
-  if (!response.ok) throw new Error(`Search conversations failed: ${response.status} ${JSON.stringify(json)}`);
+  const json = await parseJsonOrThrow(response, "Search conversations");
   return (json.items || []).slice(0, limit);
 }
 
 export async function fetchProjectResource(headers, projectId = projectIdFromUrl()) {
-  if (!projectId) throw new Error("No ChatGPT Project ID configured. Run `npm run setup` first.");
+  if (!projectId) throw new Error("No ChatGPT Project ID configured. Run `npm run connect` first.");
   const response = await fetch(`https://chatgpt.com/backend-api/gizmos/${encodeURIComponent(projectId)}`, {
     headers: { ...headers, accept: "application/json" },
   });
-  const json = await response.json();
-  if (!response.ok) throw new Error(`Fetch project failed: ${response.status} ${JSON.stringify(json)}`);
-  return json;
+  return parseJsonOrThrow(response, "Fetch project");
 }
 
 function projectSharingForUpsert(gizmo) {
@@ -421,8 +446,8 @@ export async function updateProjectInstructions(headers, { projectId = projectId
     headers: apiHeaders(headers),
     body: JSON.stringify(body),
   });
-  const json = await response.json();
-  if (!response.ok || json.error) throw new Error(`Update project instructions failed: ${response.status} ${JSON.stringify(json)}`);
+  const json = await parseJsonOrThrow(response, "Update project instructions");
+  if (json.error) throw new Error(`Update project instructions failed: ${response.status} ${JSON.stringify(json)}`);
   return { before: resource, result: json };
 }
 
@@ -432,14 +457,18 @@ export async function fetchLatestAssistantText(headers, conversationId) {
   if (!id) {
     const projectId = projectIdFromUrl();
     if (!projectId) return "";
-    const list = await fetch(`https://chatgpt.com/backend-api/gizmos/${encodeURIComponent(projectId)}/conversations?cursor=0`, {
-      headers: jsonHeaders,
-    }).then((response) => response.json());
+    const list = await fetchJsonOrThrow(
+      `https://chatgpt.com/backend-api/gizmos/${encodeURIComponent(projectId)}/conversations?cursor=0`,
+      { headers: jsonHeaders },
+      "List project conversations",
+    );
     id = list.items?.[0]?.id;
   }
   if (!id) return "";
-  const history = await fetch(`https://chatgpt.com/backend-api/conversation/${encodeURIComponent(id)}`, { headers: jsonHeaders }).then((response) =>
-    response.json(),
+  const history = await fetchJsonOrThrow(
+    `https://chatgpt.com/backend-api/conversation/${encodeURIComponent(id)}`,
+    { headers: jsonHeaders },
+    "Fetch conversation",
   );
   const messages = Object.values(history.mapping || {})
     .map((node) => node?.message)
@@ -449,9 +478,11 @@ export async function fetchLatestAssistantText(headers, conversationId) {
 }
 
 export async function fetchConversation(headers, conversationId) {
-  return fetch(`https://chatgpt.com/backend-api/conversation/${encodeURIComponent(conversationId)}`, {
-    headers: { ...headers, accept: "application/json" },
-  }).then((response) => response.json());
+  return fetchJsonOrThrow(
+    `https://chatgpt.com/backend-api/conversation/${encodeURIComponent(conversationId)}`,
+    { headers: { ...headers, accept: "application/json" } },
+    "Fetch conversation",
+  );
 }
 
 export function latestConversationNodeId(history) {
@@ -530,9 +561,11 @@ export function findImageAssetPointers(history) {
 export async function downloadGeneratedImage({ headers, assetPointer, outPath }) {
   const fileId = assetPointer?.replace(/^sediment:\/\//, "");
   if (!fileId) throw new Error("Missing image asset pointer file id.");
-  const download = await fetch(`https://chatgpt.com/backend-api/files/${encodeURIComponent(fileId)}/download`, {
-    headers: { ...headers, accept: "application/json" },
-  }).then((response) => response.json());
+  const download = await fetchJsonOrThrow(
+    `https://chatgpt.com/backend-api/files/${encodeURIComponent(fileId)}/download`,
+    { headers: { ...headers, accept: "application/json" } },
+    "Image download URL",
+  );
   if (!download.download_url) throw new Error("Image download endpoint did not return download_url.");
   const imageResponse = await fetch(download.download_url, { headers: { ...headers, accept: "image/*,*/*" } });
   const contentType = imageResponse.headers.get("content-type") || "";
@@ -594,6 +627,22 @@ export async function sendApiMessage({
     body: JSON.stringify(body),
     redirect: "manual",
   });
+  const contentType = response.headers.get("content-type") || "";
+  if (isAuthExpiredStatus(response.status)) {
+    return {
+      status: response.status,
+      ok: false,
+      contentType,
+      headers,
+      responseText: "",
+      conversationId: null,
+      finishSeen: false,
+      errorSeen: true,
+      authExpired: true,
+      message: authRefreshMessage(),
+      eventTypes: {},
+    };
+  }
   const stream = submitOnly && response.ok ? await readEventStreamUntilConversationId(response) : parseEventStream(await response.text());
   if (fetchFinalText && response.ok && !stream.errorSeen && (forceFetchFinalText || !stream.responseText)) {
     stream.responseText = await fetchLatestAssistantText(headers, stream.conversationId);
@@ -601,7 +650,7 @@ export async function sendApiMessage({
   return {
     status: response.status,
     ok: response.ok,
-    contentType: response.headers.get("content-type") || "",
+    contentType,
     headers,
     ...stream,
   };

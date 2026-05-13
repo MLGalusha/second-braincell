@@ -115,8 +115,11 @@ export function capabilities() {
   return {
     setup,
     commands: {
+      connect: {
+        description: "Create ignored .local/auth.json and .local/config.json from one authenticated ChatGPT Project cURL.",
+      },
       setup: {
-        description: "Create ignored .local/auth.json and .local/config.json from one project URL and one authenticated ChatGPT cURL.",
+        description: "Backward-compatible alias for connect.",
       },
       ask: {
         description: "Submit a ChatGPT web API job with agent-friendly defaults.",

@@ -55,7 +55,7 @@ export function buildConversationBody({
 } = {}) {
   if (!prompt) throw new Error("A prompt is required.");
   const projectId = projectIdFromProjectUrl(projectUrl);
-  if (!projectId) throw new Error("Missing ChatGPT project id. Run `npm run setup` with a valid project URL.");
+  if (!projectId) throw new Error("Missing ChatGPT project id. Run `npm run connect` with an authenticated Project cURL.");
   const body = {
     action: "next",
     messages: [

@@ -9,6 +9,8 @@ export const LOCAL_CONFIG_PATH = resolve(LOCAL_DIR, "config.json");
 
 const REQUIRED_AUTH_HEADER_RE = /^(authorization|cookie)$/i;
 const UNSAFE_HEADER_NAMES = new Set(["host", "content-length"]);
+const PROJECT_ID_RE = /^g-p-[a-z0-9]+$/i;
+const PROJECT_ID_IN_URL_RE = /\/g\/(g-p-[a-z0-9]+)(?:-|\/|$)/i;
 
 export function normalizeCurl(value) {
   return String(value || "")
@@ -44,7 +46,13 @@ export function parseCurl(source) {
 }
 
 export function projectIdFromProjectUrl(projectUrl = "") {
-  return String(projectUrl).match(/\/g\/(g-p-[0-9a-f]+)(?:-|\/|$)/i)?.[1] || null;
+  return String(projectUrl).match(PROJECT_ID_IN_URL_RE)?.[1] || null;
+}
+
+export function projectUrlFromProjectId(projectId) {
+  const value = String(projectId || "").trim();
+  if (!PROJECT_ID_RE.test(value)) return null;
+  return `https://chatgpt.com/g/${value}`;
 }
 
 export function normalizeProjectUrl(projectUrl) {
@@ -60,6 +68,33 @@ export function normalizeProjectUrl(projectUrl) {
   if (!projectIdFromProjectUrl(url.toString())) throw new Error("Project URL must include a ChatGPT project id like /g/g-p-...");
   url.hash = "";
   return url.toString();
+}
+
+export function projectIdFromCurl(parsed) {
+  const candidates = [];
+  if (parsed?.bodyRaw) {
+    try {
+      const body = JSON.parse(parsed.bodyRaw);
+      candidates.push(body?.conversation_mode?.gizmo_id);
+      candidates.push(body?.gizmo_id);
+      candidates.push(body?.conversation_template_id);
+      const stack = [body];
+      while (stack.length) {
+        const item = stack.pop();
+        if (!item || typeof item !== "object") continue;
+        for (const value of Object.values(item)) {
+          if (typeof value === "string" && PROJECT_ID_RE.test(value)) candidates.push(value);
+          else if (value && typeof value === "object") stack.push(value);
+        }
+      }
+    } catch {
+      // Some copied cURLs omit or shell-escape the body differently; callers report a targeted setup error.
+    }
+  }
+  for (const headerName of ["referer", "referrer"]) {
+    if (parsed?.headers?.[headerName]) candidates.push(projectIdFromProjectUrl(parsed.headers[headerName]));
+  }
+  return candidates.find((value) => PROJECT_ID_RE.test(String(value || ""))) || null;
 }
 
 export function sanitizeAuthHeaders(headers = {}) {
@@ -93,10 +128,19 @@ export function validateAuthCurl(curlText) {
 }
 
 export function writeLocalSetup({ projectUrl, curlText }) {
-  const normalizedProjectUrl = normalizeProjectUrl(projectUrl);
   const parsed = validateAuthCurl(curlText);
+  const curlProjectId = projectIdFromCurl(parsed);
+  const normalizedProjectUrl = projectUrl ? normalizeProjectUrl(projectUrl) : projectUrlFromProjectId(curlProjectId);
+  const projectId = normalizedProjectUrl ? projectIdFromProjectUrl(normalizedProjectUrl) : null;
+  if (!projectId) {
+    throw new Error(
+      "Could not find a ChatGPT Project ID in the copied cURL. Open the ChatGPT Project, filter Network by `conversation`, send a short message there, then copy the `conversation` request as cURL.",
+    );
+  }
+  if (curlProjectId && curlProjectId !== projectId) {
+    throw new Error(`Project mismatch: --project-url contains ${projectId}, but the copied cURL contains ${curlProjectId}.`);
+  }
   mkdirSync(LOCAL_DIR, { recursive: true, mode: 0o700 });
-  const projectId = projectIdFromProjectUrl(normalizedProjectUrl);
   writeJson(LOCAL_CONFIG_PATH, {
     version: 1,
     projectUrl: normalizedProjectUrl,
@@ -121,7 +165,7 @@ export function writeLocalSetup({ projectUrl, curlText }) {
 
 export function loadLocalConfig({ required = true } = {}) {
   if (!existsSync(LOCAL_CONFIG_PATH)) {
-    if (required) throw new Error("Missing local config. Run `npm run setup` and paste your ChatGPT project URL.");
+    if (required) throw new Error("Missing local config. Run `npm run connect` and copy one authenticated ChatGPT Project cURL from DevTools.");
     return null;
   }
   return readJson(LOCAL_CONFIG_PATH);
@@ -129,7 +173,7 @@ export function loadLocalConfig({ required = true } = {}) {
 
 export function loadLocalAuth({ required = true } = {}) {
   if (!existsSync(LOCAL_AUTH_PATH)) {
-    if (required) throw new Error("Missing local auth. Run `npm run setup` and paste one authenticated ChatGPT cURL from DevTools.");
+    if (required) throw new Error("Missing local auth. Run `npm run connect` and copy one authenticated ChatGPT Project cURL from DevTools.");
     return null;
   }
   const auth = readJson(LOCAL_AUTH_PATH);
@@ -193,8 +237,8 @@ export function localSetupStatus() {
     hints: ready
       ? []
       : [
-          "Run `npm run setup`.",
-          "Use a ChatGPT Project URL and one authenticated chatgpt.com cURL copied from DevTools.",
+          "Run `npm run connect`.",
+          "Use one authenticated ChatGPT Project cURL copied from DevTools.",
         ],
   };
 }

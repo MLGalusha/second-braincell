@@ -10,6 +10,7 @@ import { IMAGES_DIR, JOBS_DIR, OUTPUT_DIR, ROOT_DIR } from "./config.js";
 import { displayPath, ensureDir, getFlag, getFlags, hasFlag, readJson, readTextArg, slugify, uniquePath, writeJson } from "./util.js";
 import { BEST_MODEL_ORDER, DEFAULT_TEXT_MODEL, capabilities, modelKey, normalizeModelName, resolveModelPreset } from "./model-presets.js";
 import {
+  authRefreshMessage,
   downloadGeneratedImage,
   deepResearchReportFromConversation,
   fetchConversation,
@@ -29,7 +30,7 @@ import {
 import { loadLocalHeaders, readCurlInputFile, writeLocalSetup } from "./local-config.js";
 
 const __filename = fileURLToPath(import.meta.url);
-const SETUP_FILTER = "/backend-api/f/conversation";
+const SETUP_FILTER = "conversation";
 
 function color(code, value) {
   if (!process.stdout.isTTY || process.env.NO_COLOR) return value;
@@ -57,7 +58,7 @@ function usage() {
   return `
 Usage:
   npm run chatgpt -- ask --prompt "..."
-  npm run chatgpt -- setup
+  npm run chatgpt -- connect
   npm run chatgpt -- ask --kind image --quality high --prompt "..."
   npm run chatgpt -- ask --kind deep-research --prompt "..."
   npm run chatgpt -- converse --prompt "Start a conversation..."
@@ -126,7 +127,7 @@ function formatHumanCapabilities(data) {
 
   lines.push(color("1;36", "Second Braincell"));
   lines.push("");
-  lines.push(`Status: ${setup.ready ? color("32", "ready") : color("31", "setup incomplete")}`);
+  lines.push(`Status: ${setup.ready ? color("32", "ready") : color("31", "connection incomplete")}`);
   if (setup.config.ready) {
     lines.push(`Project: ${projectName || "configured"}`);
     lines.push(`Project ID: ${setup.config.projectId}`);
@@ -140,7 +141,7 @@ function formatHumanCapabilities(data) {
     for (const hint of setup.hints || []) lines.push(`  - ${hint}`);
     lines.push("");
     lines.push("Next step:");
-    lines.push("  npm run setup");
+    lines.push("  npm run connect");
     lines.push("");
   }
 
@@ -307,7 +308,7 @@ function readClipboard() {
   try {
     return execFileSync("pbpaste", { encoding: "utf8", maxBuffer: 1024 * 1024 * 16 }).trim();
   } catch {
-    throw new Error("Could not read the clipboard with `pbpaste`. Use `--project-url` and `--curl-file`, or pipe the cURL on stdin.");
+    throw new Error("Could not read the clipboard with `pbpaste`. Use `--curl-file`, `--curl`, or pipe the cURL on stdin.");
   }
 }
 
@@ -316,27 +317,18 @@ async function runSetup(argv) {
   let curlText = getFlag(argv, "--curl", undefined);
   const curlFile = getFlag(argv, "--curl-file", undefined);
   if (curlFile) curlText = readCurlInputFile(curlFile);
-  const interactive = process.stdin.isTTY && !projectUrl && !curlText && !curlFile;
+  const interactive = process.stdin.isTTY && !curlText && !curlFile;
   if (interactive) {
-    console.log(color("1", "\nSecond Braincell setup"));
-    console.log("This setup reads from your clipboard after you press Enter. Anything typed or pasted at these prompts is ignored.");
-  }
-  if (!projectUrl && process.stdin.isTTY) {
-    setupTitle("1. Create the ChatGPT Project");
-    setupSteps([
-      "Open ChatGPT and start creating a new Project.",
-      "Name the Project `Codex`.",
-      "Before creating it, click the settings button.",
-      "Set Project memory to project-only. This cannot be changed after the Project is created.",
-      "Create and open that Project in the browser.",
-      "Copy the Project URL from the browser address bar.",
-    ]);
-    projectUrl = await waitForClipboard("the Project URL");
+    console.log(color("1", "\nSecond Braincell connect"));
+    console.log("This connection step reads from your clipboard after you press Enter. Anything typed or pasted at these prompts is ignored.");
   }
   if (!curlText && process.stdin.isTTY) {
-    setupTitle("2. Copy one authenticated cURL");
+    setupTitle("Copy one authenticated Project cURL");
     setupSteps([
-      "In the same ChatGPT Project page, right-click the page and click Inspect.",
+      "Open ChatGPT and create a Project named `Codex` if you do not already have one.",
+      "Before creating a new Project, click the settings button and set Project memory to project-only. This cannot be changed after the Project is created.",
+      "Open the ChatGPT Project in the browser.",
+      "Right-click the ChatGPT page and click Inspect.",
       "In DevTools, click the Network tab.",
       "Click the clear network log button in the top-left of Network: ⊘",
       "Click the Network filter box directly below that clear button.",
@@ -348,7 +340,6 @@ async function runSetup(argv) {
     curlText = await waitForClipboard("Copy as cURL");
   }
   if (!curlText && !process.stdin.isTTY) curlText = readFileSync(0, "utf8");
-  if (!projectUrl) throw new Error("Missing project URL. Run `npm run setup -- --project-url <url>` when piping a cURL on stdin.");
   const status = writeLocalSetup({ projectUrl, curlText });
   const summary = {
     ready: status.ready,
@@ -361,7 +352,7 @@ async function runSetup(argv) {
     console.log(JSON.stringify(summary, null, 2));
     return;
   }
-  setupTitle("Setup complete");
+  setupTitle("Connection complete");
   console.log(`  Ready: ${color("32", String(summary.ready))}`);
   console.log(`  Project ID: ${summary.projectId}`);
   console.log(`  Config: ${summary.configPath}`);
@@ -459,6 +450,7 @@ async function runDirectApiMessage(argv, { silent = false } = {}) {
         kind,
         quality,
       });
+      if (isAuthExpiredResult(result)) break;
       if (result.ok && !result.errorSeen) {
         markModelCapability({ modelPreset, thinkingEffort, model, available: true, status: result.status });
         break;
@@ -475,7 +467,7 @@ async function runDirectApiMessage(argv, { silent = false } = {}) {
     job.options.model = model;
     job.options.thinkingEffort = thinkingEffort;
     job.options.modelPreset = modelPreset;
-    job.status = result.ok && !result.errorSeen ? (isAsync ? "submitted" : "completed") : "failed";
+    job.status = isAuthExpiredResult(result) ? "needs_setup" : result.ok && !result.errorSeen ? (isAsync ? "submitted" : "completed") : "failed";
     job.statusCode = result.status;
     job.contentType = result.contentType;
     job.conversationId = result.conversationId;
@@ -488,6 +480,7 @@ async function runDirectApiMessage(argv, { silent = false } = {}) {
         ? modelUnavailableMessageForResult({ ok: false, status: fallbackLog.find((entry) => entry.modelPreset === "pro")?.status }, { modelPreset: "pro", modelSelection })
         : modelUnavailableMessageForResult(result, { modelPreset, modelSelection });
     if (modelUnavailableMessage) job.message = modelUnavailableMessage;
+    if (isAuthExpiredResult(result)) job.message = result.message || authRefreshMessage();
     if (curlPath) job.options.curlPath = curlPath;
     saveJob(job);
     const responsePath = resolve(JOBS_DIR, job.id, "response.md");
@@ -532,7 +525,12 @@ async function runDirectApiMessage(argv, { silent = false } = {}) {
     if (!silent) console.log(JSON.stringify(payload, null, 2));
     return payload;
   } catch (error) {
-    job.status = "failed";
+    if (error?.code === "CHATGPT_AUTH_EXPIRED") {
+      job.status = "needs_setup";
+      job.message = authRefreshMessage();
+    } else {
+      job.status = "failed";
+    }
     job.error = String(error.stack || error.message || error);
     saveJob(job);
     throw error;
@@ -618,7 +616,11 @@ function resolveBestModelFromCache() {
 }
 
 function isModelUnavailableResult(result) {
-  return Boolean(result && !result.ok && [401, 403, 422].includes(result.status));
+  return Boolean(result && !result.authExpired && !result.ok && result.status === 422);
+}
+
+function isAuthExpiredResult(result) {
+  return Boolean(result?.authExpired || [401, 403].includes(result?.status));
 }
 
 function keyForResolvedModel({ modelPreset, thinkingEffort } = {}) {
@@ -716,6 +718,20 @@ async function runSingleModelCheck(testCase, headers) {
       forceFetchFinalText: true,
       kind: "message",
     });
+    if (isAuthExpiredResult(result)) {
+      return {
+        ...testCase,
+        key,
+        label: resolved.presetName,
+        model: resolved.model || null,
+        thinkingEffort: resolved.thinkingEffort || null,
+        available: false,
+        authExpired: true,
+        status: result.status,
+        error: result.message || authRefreshMessage(),
+        checkedAt,
+      };
+    }
     let responseText = result.responseText || "";
     if (result.ok && (!responseText || !responseText.includes(expected))) {
       responseText = await waitForAssistantText(headers, result.conversationId, { expected });
@@ -752,7 +768,7 @@ function formatModelCheck(results, path, best = resolveBestModelFromResults(resu
   const lines = [color("1;36", "Second Braincell Model Check"), ""];
   for (const result of results) {
     const marker = result.available ? color("32", "available") : color("31", "unavailable");
-    const detail = result.status ? `HTTP ${result.status}` : result.error || "not checked";
+    const detail = result.authExpired ? result.error : result.status ? `HTTP ${result.status}` : result.error || "not checked";
     lines.push(`${formatModelCheckName(result)}: ${marker} (${detail})`);
   }
   if (best) {
@@ -772,7 +788,9 @@ async function runModelCheck(argv) {
   const headers = loadLocalHeaders();
   const results = [];
   for (const testCase of cases) {
-    results.push(await runSingleModelCheck(testCase, headers));
+    const result = await runSingleModelCheck(testCase, headers);
+    results.push(result);
+    if (result.authExpired) break;
   }
   const previous = loadModelCapabilities();
   const mergedResults = { ...(previous?.results || {}) };
@@ -1081,6 +1099,7 @@ async function runConverse(argv) {
       console.log(result.response || "(no response text)");
       console.log("");
 
+      if (isAuthExpiredResult(result)) throw new Error(result.message || authRefreshMessage());
       if (!result.ok) throw new Error(`Turn ${turn} failed with status ${result.status}`);
       continueJobId = result.id;
       turn += 1;
@@ -1251,7 +1270,7 @@ async function runChatSummary(argv) {
 
 async function runProjectInstructions(argv) {
   const projectId = scopeProjectId(argv) || projectIdFromUrl();
-  if (!projectId) throw new Error("No ChatGPT Project ID configured. Run `npm run setup` first.");
+  if (!projectId) throw new Error("No ChatGPT Project ID configured. Run `npm run connect` first.");
   const headers = loadLocalHeaders();
 
   const setText = getFlag(argv, "--set", undefined);
@@ -1408,7 +1427,7 @@ async function main() {
       return;
     }
 
-    if (command === "setup") {
+    if (command === "connect" || command === "setup") {
       await runSetup(argv);
       return;
     }
@@ -1488,7 +1507,18 @@ async function main() {
     if (command === "api-status" || command === "status") {
       const id = argv[0];
       if (!id) throw new Error(`${command} requires a job id`);
-      const job = await updateApiJobStatus(loadJob(id));
+      const existingJob = loadJob(id);
+      let job;
+      try {
+        job = await updateApiJobStatus(existingJob);
+      } catch (error) {
+        if (error?.code !== "CHATGPT_AUTH_EXPIRED") throw error;
+        job = updateJob(existingJob, {
+          status: "needs_setup",
+          message: authRefreshMessage(),
+          error: String(error.stack || error.message || error),
+        });
+      }
       console.log(JSON.stringify(job, null, 2));
       return;
     }
@@ -1517,7 +1547,7 @@ async function main() {
 
     throw new Error(`Unknown command: ${command}\n\n${usage()}`);
   } catch (error) {
-    console.error(String(error.stack || error.message || error));
+    console.error(error?.code === "CHATGPT_AUTH_EXPIRED" ? error.message : String(error.stack || error.message || error));
     process.exit(1);
   }
 }

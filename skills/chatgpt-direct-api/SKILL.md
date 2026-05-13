@@ -9,7 +9,7 @@ Use this skill when working in this repository to send prompts, files, images, o
 - Keep generated artifacts in ignored `output/`.
 - Do not print cookies, auth headers, proof tokens, signed upload URLs, HARs, cURLs, file ids, or account identifiers.
 
-## Setup
+## Connect
 
 Check setup first:
 
@@ -19,13 +19,15 @@ npm run capabilities
 
 This prints a human-readable readiness summary. Use `npm run capabilities -- --detailed` when structured debug JSON is needed.
 
-If setup is missing, ask the user to run:
+If connection is missing, ask the user to run:
 
 ```bash
-npm run setup
+npm run connect
 ```
 
-Setup is clipboard-based. Tell the user to create a new ChatGPT Project named `Codex`, click the settings button before creating it, and set Project memory to project-only because this cannot be changed after creation. Then they should copy the Project URL and press Enter. For the cURL, tell them to right-click the ChatGPT page, click Inspect, open DevTools Network, clear the network log button in the top-left of Network (`⊘`), click the Network filter box directly below it, paste `/backend-api/f/conversation`, send a short Project message, right-click the `conversation` request with the orange square `<>` icon, choose Copy > Copy as cURL, and press Enter in setup. There is no need to paste into the terminal; setup reads from the clipboard and ignores typed or pasted prompt input. The runner stores extracted headers in `.local/auth.json` and the project URL in `.local/config.json`.
+Connect is clipboard-based. Tell the user to create a new ChatGPT Project named `Codex`, click the settings button before creating it, and set Project memory to project-only because this cannot be changed after creation. Then they should open that Project, right-click the ChatGPT page, click Inspect, open DevTools Network, clear the network log button in the top-left of Network (`⊘`), click the Network filter box directly below it, type `conversation`, send a short Project message, right-click the `conversation` request with the orange square `<>` icon, choose Copy > Copy as cURL, and press Enter in connect. There is no need to paste into the terminal; connect reads from the clipboard and ignores typed or pasted prompt input. The runner stores extracted headers in `.local/auth.json` and the extracted Project ID in `.local/config.json`.
+
+If a command returns `needs_setup` or says the ChatGPT session credentials expired, ask the user to run `npm run connect` again and copy a fresh authenticated Project conversation cURL.
 
 ## Commands
 
@@ -143,7 +145,7 @@ Model meanings:
 - `5.3`: GPT-5.3 Instant legacy fallback.
 - `best`: use cached model-check results, preferring `pro extended`, then `thinking extended`, `thinking standard`, `instant`, `5.3`, and `auto`.
 
-Run a model check when setup changes or when model availability matters:
+Run a model check when connection changes or when model availability matters:
 
 ```bash
 npm run model-check

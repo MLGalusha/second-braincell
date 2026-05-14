@@ -3,44 +3,10 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { OUTPUT_DIR } from "../src/config.js";
+import { parseCurl } from "../src/curl.js";
 
 const DEFAULT_CURL_PATH = resolve(tmpdir(), "chatgpt-send.curl");
 const DEFAULT_PROMPT = "API replay verification. Reply OK.";
-
-function normalizeCurl(value) {
-  return String(value || "")
-    .replace(/\\\r?\n/g, " ")
-    .replace(/\^\r?\n/g, " ")
-    .replace(/`\r?\n/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function parseCurl(source) {
-  const normalized = normalizeCurl(source);
-  const urlMatch = normalized.match(/curl\s+(?:--location\s+)?(?:"([^"]+)"|'([^']+)'|([^\s]+))/);
-  const headers = {};
-  const headerRe = /(?:-H|--header)\s+(?:"([^"]*)"|'([^']*)'|([^\s][^\s]*))/g;
-  for (const match of normalized.matchAll(headerRe)) {
-    const header = match[1] || match[2] || match[3] || "";
-    const split = header.indexOf(":");
-    if (split === -1) continue;
-    const name = header.slice(0, split).trim().toLowerCase();
-    if (["host", "content-length"].includes(name)) continue;
-    headers[name] = header.slice(split + 1).trim();
-  }
-  const dataMatch =
-    normalized.match(/(?:--data-raw|--data-binary|--data|--data-ascii)\s+\$?'((?:\\'|[^'])*)'/) ||
-    normalized.match(/(?:--data-raw|--data-binary|--data|--data-ascii)\s+"((?:\\"|[^"])*)"/);
-  const bodyRaw = dataMatch ? dataMatch[1].replace(/\\'/g, "'").replace(/\\"/g, '"') : "";
-  const methodMatch = normalized.match(/(?:-X|--request)\s+([A-Z]+)/i);
-  return {
-    method: methodMatch?.[1]?.toUpperCase() || (bodyRaw ? "POST" : "GET"),
-    url: urlMatch?.[1] || urlMatch?.[2] || urlMatch?.[3] || "",
-    headers,
-    bodyRaw,
-  };
-}
 
 function getArg(name, fallback) {
   const index = process.argv.indexOf(name);

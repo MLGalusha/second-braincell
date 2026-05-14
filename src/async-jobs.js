@@ -45,6 +45,75 @@ export function heartbeatAutomationForAsyncJob(jobId, kind) {
   };
 }
 
+export function imageJobWaitingPatch(history) {
+  return { status: "waiting", asyncStatus: history.async_status || null, message: "No image asset pointer yet." };
+}
+
+export function imageJobCompletedPatch({ history, imagePath, contentType }) {
+  return {
+    patch: { status: "completed", asyncStatus: history.async_status || null, message: undefined },
+    artifacts: {
+      image: imagePath,
+      imageContentType: contentType,
+      chatTitle: history.title,
+    },
+  };
+}
+
+export function deepResearchJobPatch({ history, report, responsePath }) {
+  if (!report.text) {
+    return {
+      patch: {
+        status: report.status === "failed" ? "failed" : "waiting",
+        asyncStatus: history.async_status || null,
+        deepResearchStatus: report.status || null,
+        message: report.status ? `Deep Research status: ${report.status}; no report text yet.` : "No Deep Research report text yet.",
+      },
+      clearArtifacts: ["responseMarkdown"],
+    };
+  }
+
+  return {
+    patch: {
+      status: "completed",
+      responseLength: report.text.length,
+      asyncStatus: history.async_status || null,
+      deepResearchStatus: report.status || null,
+      message: undefined,
+    },
+    artifacts: {
+      responseMarkdown: responsePath,
+      chatTitle: history.title,
+      ...(report.reportMessageId ? { reportMessageId: report.reportMessageId } : {}),
+    },
+    responseText: report.text,
+  };
+}
+
+export function textJobPatch({ history, text, responsePath }) {
+  if (!text) {
+    return {
+      patch: { status: "waiting", asyncStatus: history.async_status || null, message: "No assistant text yet." },
+      clearArtifacts: ["responseMarkdown"],
+    };
+  }
+
+  return {
+    patch: { status: "completed", responseLength: text.length, asyncStatus: history.async_status || null, message: undefined },
+    artifacts: {
+      responseMarkdown: responsePath,
+      chatTitle: history.title,
+    },
+    responseText: text,
+  };
+}
+
+function applyJobTransition(job, transition) {
+  for (const key of transition.clearArtifacts || []) delete job.artifacts[key];
+  Object.assign(job.artifacts, transition.artifacts || {});
+  return updateJob(job, transition.patch);
+}
+
 export async function updateApiJobStatus(job) {
   if (!job.conversationId) return updateJob(job, { status: "needs_user", warning: "No conversation id captured for API job." });
   const headers = job.options?.curlPath ? loadCurlTemplate(job.options.curlPath).headers : loadLocalHeaders();
@@ -54,48 +123,23 @@ export async function updateApiJobStatus(job) {
   if (job.options?.outputKind === "image" || job.kind === "api-image") {
     const pointers = findImageAssetPointers(history);
     if (!pointers.length) {
-      return updateJob(job, { status: "waiting", asyncStatus: history.async_status || null, message: "No image asset pointer yet." });
+      return updateJob(job, imageJobWaitingPatch(history));
     }
     ensureDir(IMAGES_DIR);
     const imagePath = uniquePath(IMAGES_DIR, job.id, ".png");
     const downloaded = await downloadGeneratedImage({ headers, assetPointer: pointers.at(-1).asset_pointer, outPath: imagePath });
-    job.artifacts.image = imagePath;
-    job.artifacts.imageContentType = downloaded.contentType;
-    job.artifacts.chatTitle = history.title;
-    return updateJob(job, { status: "completed", asyncStatus: history.async_status || null, message: undefined });
+    return applyJobTransition(job, imageJobCompletedPatch({ history, imagePath, contentType: downloaded.contentType }));
   }
 
   if (job.kind === "api-deep-research") {
     const report = deepResearchReportFromConversation(history);
-    if (!report.text) {
-      delete job.artifacts.responseMarkdown;
-      return updateJob(job, {
-        status: report.status === "failed" ? "failed" : "waiting",
-        asyncStatus: history.async_status || null,
-        deepResearchStatus: report.status || null,
-        message: report.status ? `Deep Research status: ${report.status}; no report text yet.` : "No Deep Research report text yet.",
-      });
-    }
-    writeFileSync(responsePath, `${report.text}\n`);
-    job.artifacts.responseMarkdown = responsePath;
-    job.artifacts.chatTitle = history.title;
-    if (report.reportMessageId) job.artifacts.reportMessageId = report.reportMessageId;
-    return updateJob(job, {
-      status: "completed",
-      responseLength: report.text.length,
-      asyncStatus: history.async_status || null,
-      deepResearchStatus: report.status || null,
-      message: undefined,
-    });
+    const transition = deepResearchJobPatch({ history, report, responsePath });
+    if (transition.responseText) writeFileSync(responsePath, `${transition.responseText}\n`);
+    return applyJobTransition(job, transition);
   }
 
   const text = latestAssistantTextFromConversation(history);
-  if (!text) {
-    delete job.artifacts.responseMarkdown;
-    return updateJob(job, { status: "waiting", asyncStatus: history.async_status || null, message: "No assistant text yet." });
-  }
-  writeFileSync(responsePath, `${text}\n`);
-  job.artifacts.responseMarkdown = responsePath;
-  job.artifacts.chatTitle = history.title;
-  return updateJob(job, { status: "completed", responseLength: text.length, asyncStatus: history.async_status || null, message: undefined });
+  const transition = textJobPatch({ history, text, responsePath });
+  if (transition.responseText) writeFileSync(responsePath, `${transition.responseText}\n`);
+  return applyJobTransition(job, transition);
 }

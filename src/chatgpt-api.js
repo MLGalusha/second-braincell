@@ -57,7 +57,7 @@ export function isAuthExpiredStatus(status) {
 }
 
 export function authRefreshMessage() {
-  return "ChatGPT session credentials appear to be expired or unauthorized. Run `npm run connect` and copy a fresh authenticated Project cURL from DevTools.";
+  return "ChatGPT session credentials appear to be expired or unauthorized. Run `npm run connect -- --force` and copy a fresh authenticated Project cURL from DevTools.";
 }
 
 export class AuthExpiredError extends Error {

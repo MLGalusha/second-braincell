@@ -11,6 +11,23 @@ function featureLine(label, ready) {
   return `  ${checkmark(ready)} ${label}`;
 }
 
+export function formatAlreadyConnected(setup) {
+  const lines = [];
+  lines.push(color("1;36", "Second Braincell"));
+  lines.push("");
+  lines.push(`Status: ${color("32", "already connected")}`);
+  if (setup?.config?.projectId) lines.push(`Project ID: ${setup.config.projectId}`);
+  if (setup?.config?.path) lines.push(`Config: ${setup.config.path}`);
+  if (setup?.auth?.path) lines.push(`Auth: ${setup.auth.path}`);
+  lines.push("");
+  lines.push("To reconnect with a fresh ChatGPT cURL:");
+  lines.push("  npm run connect -- --force");
+  lines.push("");
+  lines.push("For the full status:");
+  lines.push("  npm run capabilities");
+  return lines.join("\n");
+}
+
 export function formatHumanCapabilities(data) {
   const lines = [];
   const setup = data.setup;

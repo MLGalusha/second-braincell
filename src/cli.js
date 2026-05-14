@@ -15,6 +15,7 @@ import {
   withoutFlags,
 } from "./cli-args.js";
 import {
+  formatAlreadyConnected,
   formatChatList,
   formatConversationSummary,
   formatDate,
@@ -25,7 +26,7 @@ import {
   sanitizeSearchResult,
 } from "./cli-formatters.js";
 import { createJob, listJobs, loadJob, saveJob, updateJob } from "./jobs.js";
-import { JOBS_DIR, OUTPUT_DIR } from "./config.js";
+import { JOBS_DIR, OUTPUT_DIR, ROOT_DIR } from "./config.js";
 import { displayPath, ensureDir, getFlag, getFlags, hasFlag, readJson, readTextArg, slugify, uniquePath, writeJson } from "./util.js";
 import { BEST_MODEL_ORDER, capabilities, modelKey, normalizeModelName, resolveModelPreset } from "./model-presets.js";
 import {
@@ -43,7 +44,7 @@ import {
   updateProjectInstructions,
   uploadFile,
 } from "./chatgpt-api.js";
-import { loadLocalHeaders, readCurlInputFile, writeLocalSetup } from "./local-config.js";
+import { loadLocalHeaders, localSetupStatus, readCurlInputFile, writeLocalSetup } from "./local-config.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const SETUP_FILTER = "conversation";
@@ -217,6 +218,31 @@ async function runSetup(argv) {
   let curlText = getFlag(argv, "--curl", undefined);
   const curlFile = getFlag(argv, "--curl-file", undefined);
   if (curlFile) curlText = readCurlInputFile(curlFile);
+  const force = hasFlag(argv, "--force");
+  const hasExplicitCurlInput = Boolean(curlText || curlFile);
+  const existing = localSetupStatus();
+  if (existing.ready && !force && !hasExplicitCurlInput) {
+    if (!process.stdout.isTTY) {
+      console.log(
+        JSON.stringify(
+          {
+            ready: true,
+            alreadyConnected: true,
+            authPath: existing.auth.path,
+            configPath: existing.config.path,
+            projectId: existing.config.projectId,
+            reconnect: "npm run connect -- --force",
+            status: "npm run capabilities",
+          },
+          null,
+          2,
+        ),
+      );
+      return;
+    }
+    console.log(formatAlreadyConnected(existing));
+    return;
+  }
   const interactive = process.stdin.isTTY && !curlText && !curlFile;
   if (interactive) {
     console.log(color("1", "\nSecond Braincell connect"));

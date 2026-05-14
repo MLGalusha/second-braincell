@@ -2,46 +2,12 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import { parseCurl } from "./curl.js";
 import { fileInfo } from "./util.js";
 import { loadLocalConfig, loadLocalHeaders } from "./local-config.js";
 import { bodyForKind } from "./request-builders.js";
 
 export const DEFAULT_API_CURL_PATH = resolve(tmpdir(), "chatgpt-send.curl");
-
-export function normalizeCurl(value) {
-  return String(value || "")
-    .replace(/\\\r?\n/g, " ")
-    .replace(/\^\r?\n/g, " ")
-    .replace(/`\r?\n/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-export function parseCurl(source) {
-  const normalized = normalizeCurl(source);
-  const urlMatch = normalized.match(/curl\s+(?:--location\s+)?(?:"([^"]+)"|'([^']+)'|([^\s]+))/);
-  const headers = {};
-  const headerRe = /(?:-H|--header)\s+(?:"([^"]*)"|'([^']*)'|([^\s][^\s]*))/g;
-  for (const match of normalized.matchAll(headerRe)) {
-    const header = match[1] || match[2] || match[3] || "";
-    const split = header.indexOf(":");
-    if (split === -1) continue;
-    const name = header.slice(0, split).trim().toLowerCase();
-    if (["host", "content-length"].includes(name)) continue;
-    headers[name] = header.slice(split + 1).trim();
-  }
-  const dataMatch =
-    normalized.match(/(?:--data-raw|--data-binary|--data|--data-ascii)\s+\$?'((?:\\'|[^'])*)'/) ||
-    normalized.match(/(?:--data-raw|--data-binary|--data|--data-ascii)\s+"((?:\\"|[^"])*)"/);
-  const bodyRaw = dataMatch ? dataMatch[1].replace(/\\'/g, "'").replace(/\\"/g, '"') : "";
-  const methodMatch = normalized.match(/(?:-X|--request)\s+([A-Z]+)/i);
-  return {
-    method: methodMatch?.[1]?.toUpperCase() || (bodyRaw ? "POST" : "GET"),
-    url: urlMatch?.[1] || urlMatch?.[2] || urlMatch?.[3] || "",
-    headers,
-    bodyRaw,
-  };
-}
 
 export function loadCurlTemplate(path = DEFAULT_API_CURL_PATH) {
   const parsed = parseCurl(readFileSync(path, "utf8"));

@@ -2,45 +2,9 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { OUTPUT_DIR } from "../src/config.js";
+import { parseCurl } from "../src/curl.js";
 
 const inputPath = process.argv[2] || resolve(tmpdir(), "chatgpt-send.curl");
-
-function normalizeCurl(value) {
-  return String(value || "")
-    .replace(/\\\r?\n/g, " ")
-    .replace(/\^\r?\n/g, " ")
-    .replace(/`\r?\n/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function shellUnquote(value) {
-  const text = String(value || "").trim();
-  if ((text.startsWith("'") && text.endsWith("'")) || (text.startsWith('"') && text.endsWith('"'))) return text.slice(1, -1);
-  return text;
-}
-
-function parseCurl(source) {
-  const normalized = normalizeCurl(source);
-  const urlMatch = normalized.match(/curl\s+(?:--location\s+)?(?:"([^"]+)"|'([^']+)'|([^\s]+))/);
-  const headers = {};
-  const headerRe = /(?:-H|--header)\s+(?:"([^"]*)"|'([^']*)'|([^\s][^\s]*))/g;
-  for (const match of normalized.matchAll(headerRe)) {
-    const header = match[1] || match[2] || match[3] || "";
-    const split = header.indexOf(":");
-    if (split === -1) continue;
-    headers[header.slice(0, split).trim().toLowerCase()] = header.slice(split + 1).trim();
-  }
-
-  const dataMatch =
-    normalized.match(/(?:--data-raw|--data-binary|--data|--data-ascii)\s+\$?'((?:\\'|[^'])*)'/) ||
-    normalized.match(/(?:--data-raw|--data-binary|--data|--data-ascii)\s+"((?:\\"|[^"])*)"/);
-  const bodyRaw = dataMatch ? dataMatch[1].replace(/\\'/g, "'").replace(/\\"/g, '"') : "";
-  const methodMatch = normalized.match(/(?:-X|--request)\s+([A-Z]+)/i);
-  const method = methodMatch?.[1]?.toUpperCase() || (bodyRaw ? "POST" : "GET");
-  const url = shellUnquote(urlMatch?.[1] || urlMatch?.[2] || urlMatch?.[3] || "");
-  return { method, url, headers, bodyRaw };
-}
 
 function isSensitiveKey(key) {
   return /token|cookie|csrf|session|auth|secret|sig|signature|account|email|user|org|file|conversation|message|id|uuid|name|title|content|text|body|prompt|input|parts/i.test(

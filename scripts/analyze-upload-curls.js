@@ -2,48 +2,11 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { OUTPUT_DIR } from "../src/config.js";
+import { parseCurl } from "../src/curl.js";
 
 const DEFAULT_RAW = resolve(tmpdir(), "chatgpt-upload-raw.curl");
 const DEFAULT_PROCESS = resolve(tmpdir(), "chatgpt-upload-process.curl");
 const DEFAULT_CREATE = resolve(tmpdir(), "chatgpt-upload-create.curl");
-
-function normalizeCurl(value) {
-  return String(value || "")
-    .replace(/\\\r?\n/g, " ")
-    .replace(/\^\r?\n/g, " ")
-    .replace(/`\r?\n/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function parseCurl(source) {
-  const normalized = normalizeCurl(source);
-  const urlMatch = normalized.match(/curl\s+(?:--location\s+)?(?:"([^"]+)"|'([^']+)'|([^\s]+))/);
-  const headers = {};
-  const headerRe = /(?:-H|--header)\s+(?:"([^"]*)"|'([^']*)'|([^\s][^\s]*))/g;
-  for (const match of normalized.matchAll(headerRe)) {
-    const header = match[1] || match[2] || match[3] || "";
-    const split = header.indexOf(":");
-    if (split === -1) continue;
-    const name = header.slice(0, split).trim().toLowerCase();
-    if (["host", "content-length"].includes(name)) continue;
-    headers[name] = header.slice(split + 1).trim();
-  }
-  const dataMatch =
-    normalized.match(/(?:--data-raw|--data-binary|--data|--data-ascii)\s+\$?'((?:\\'|[^'])*)'/) ||
-    normalized.match(/(?:--data-raw|--data-binary|--data|--data-ascii)\s+"((?:\\"|[^"])*)"/) ||
-    normalized.match(/(?:--data-raw|--data-binary|--data|--data-ascii)\s+(@[^\s]+)/);
-  const methodMatch = normalized.match(/(?:-X|--request)\s+(?:"([^"]+)"|'([^']+)'|([A-Z]+))/i);
-  const bodyRaw = dataMatch ? (dataMatch[1] || "").replace(/\\'/g, "'").replace(/\\"/g, '"') : "";
-  return {
-    method: (methodMatch?.[1] || methodMatch?.[2] || methodMatch?.[3] || (bodyRaw ? "POST" : "GET")).toUpperCase(),
-    url: urlMatch?.[1] || urlMatch?.[2] || urlMatch?.[3] || "",
-    headers,
-    bodyRaw,
-    hasData: Boolean(dataMatch),
-    dataIsFileReference: bodyRaw.startsWith("@"),
-  };
-}
 
 function isSensitiveHeaderName(name) {
   return /cookie|authorization|token|sentinel|session|device-id|turn-trace|conduit|signature|secret/i.test(name);

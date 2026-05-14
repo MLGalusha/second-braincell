@@ -7,6 +7,14 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { asyncJobHeartbeatLabel, heartbeatAutomationForAsyncJob, updateApiJobStatus } from "./async-jobs.js";
 import {
+  applyModelPreset as applyModelPresetArgs,
+  ensureFlag,
+  firstPositionalArg,
+  normalizeAskArgv,
+  splitSelectorArg,
+  withoutFlags,
+} from "./cli-args.js";
+import {
   formatChatList,
   formatConversationSummary,
   formatDate,
@@ -19,7 +27,7 @@ import {
 import { createJob, listJobs, loadJob, saveJob, updateJob } from "./jobs.js";
 import { JOBS_DIR, OUTPUT_DIR } from "./config.js";
 import { displayPath, ensureDir, getFlag, getFlags, hasFlag, readJson, readTextArg, slugify, uniquePath, writeJson } from "./util.js";
-import { BEST_MODEL_ORDER, DEFAULT_TEXT_MODEL, capabilities, modelKey, normalizeModelName, resolveModelPreset } from "./model-presets.js";
+import { BEST_MODEL_ORDER, capabilities, modelKey, normalizeModelName, resolveModelPreset } from "./model-presets.js";
 import {
   authRefreshMessage,
   fetchConversation,
@@ -420,24 +428,6 @@ async function runDirectApiMessage(argv, { silent = false } = {}) {
   }
 }
 
-function withoutFlags(argv, names) {
-  const drop = new Set(names);
-  const next = [];
-  for (let i = 0; i < argv.length; i += 1) {
-    if (!drop.has(argv[i])) {
-      next.push(argv[i]);
-      continue;
-    }
-    if (i + 1 < argv.length && !String(argv[i + 1]).startsWith("--")) i += 1;
-  }
-  return next;
-}
-
-function ensureFlag(argv, name, value = null) {
-  if (argv.includes(name)) return argv;
-  return value === null ? [...argv, name] : [...argv, name, String(value)];
-}
-
 const MODEL_CAPABILITIES_PATH = resolve(ROOT_DIR, ".local", "model-capabilities.json");
 
 function nowIsoForCli() {
@@ -556,22 +546,8 @@ function modelAttemptsForBest(current = {}) {
   return attempts;
 }
 
-function applyModelPreset(argv, { defaultModel = DEFAULT_TEXT_MODEL } = {}) {
-  let requestedModel = getFlag(argv, "--model", defaultModel);
-  let requestedReasoning = getFlag(argv, "--reasoning", getFlag(argv, "--thinking-effort", undefined));
-  const requestedWasBest = normalizeModelName(requestedModel) === "best";
-  if (requestedWasBest) {
-    const best = resolveBestModelFromCache();
-    requestedModel = best.modelName;
-    requestedReasoning = requestedReasoning || best.reasoning;
-  }
-  const resolved = resolveModelPreset({ modelName: requestedModel, reasoning: requestedReasoning });
-  let next = withoutFlags(argv, ["--model", "--reasoning", "--thinking-effort"]);
-  if (resolved.model) next = ensureFlag(next, "--model", resolved.model);
-  if (resolved.thinkingEffort) next = ensureFlag(next, "--thinking-effort", resolved.thinkingEffort);
-  if (resolved.presetName) next = ensureFlag(next, "--model-preset", resolved.presetName);
-  if (requestedWasBest) next = ensureFlag(next, "--model-selection", "best");
-  return next;
+function applyModelPreset(argv, options = {}) {
+  return applyModelPresetArgs(argv, { resolveBestModel: resolveBestModelFromCache, ...options });
 }
 
 async function waitForAssistantText(headers, conversationId, { expected, timeoutMs = 20000, intervalMs = 1500 } = {}) {
@@ -693,47 +669,7 @@ async function runModelCheck(argv) {
 }
 
 async function runAsk(argv) {
-  const kind = getFlag(argv, "--kind", "message");
-  if (!["message", "image", "deep-research"].includes(kind)) throw new Error("--kind must be message, image, or deep-research");
-  const asyncByDefault = kind !== "message" && !hasFlag(argv, "--sync");
-  let nextArgv = withoutFlags(argv, ["--kind", "--sync"]);
-
-  if (asyncByDefault) {
-    nextArgv = ensureFlag(nextArgv, "--async");
-    nextArgv = ensureFlag(nextArgv, "--watch");
-    if (kind === "image") {
-      nextArgv = ensureFlag(nextArgv, "--watch-interval-seconds", "30");
-      nextArgv = ensureFlag(nextArgv, "--watch-timeout-seconds", "300");
-    }
-    if (kind === "deep-research") {
-      nextArgv = ensureFlag(nextArgv, "--watch-interval-seconds", "300");
-      nextArgv = ensureFlag(nextArgv, "--watch-timeout-seconds", "7200");
-    }
-  }
-
-  if (kind === "image") {
-    nextArgv = withoutFlags(nextArgv, ["--model", "--reasoning", "--thinking-effort"]);
-    await runDirectApiMessage([
-      ...nextArgv,
-      "--job-kind",
-      "api-image",
-      "--output-kind",
-      "image",
-      "--kind",
-      "image",
-      "--quality",
-      getFlag(argv, "--quality", "high"),
-    ]);
-    return;
-  }
-
-  if (kind === "deep-research") {
-    const modeledArgv = hasFlag(argv, "--model") || hasFlag(argv, "--reasoning") || hasFlag(argv, "--thinking-effort") ? applyModelPreset(nextArgv, { defaultModel: undefined }) : nextArgv;
-    await runDirectApiMessage([...modeledArgv, "--job-kind", "api-deep-research", "--kind", "deep-research"]);
-    return;
-  }
-
-  await runDirectApiMessage(applyModelPreset(nextArgv));
+  await runDirectApiMessage(normalizeAskArgv(argv, { resolveBestModel: resolveBestModelFromCache }));
 }
 
 function transcriptDefaultPath() {
@@ -1001,65 +937,6 @@ async function runSearchChats(argv) {
   } else {
     console.log(formatSearchResults(results, query, argv));
   }
-}
-
-function firstPositionalIndex(argv) {
-  const valueFlags = new Set([
-    "--prompt",
-    "--prompt-file",
-    "--file",
-    "--curl",
-    "--curl-file",
-    "--project-url",
-    "--model",
-    "--reasoning",
-    "--thinking-effort",
-    "--kind",
-    "--quality",
-    "--attach-file",
-    "--continue-job",
-    "--conversation-id",
-    "--parent-message-id",
-    "--transcript",
-    "--out",
-    "--limit",
-    "--max-turns",
-    "--project",
-    "--search",
-    "--query",
-    "--set",
-    "--set-file",
-    "--watch-interval-seconds",
-    "--watch-timeout-seconds",
-    "--max-messages",
-    "--max-chars",
-    "--job-kind",
-    "--output-kind",
-    "--model-preset",
-    "--model-selection",
-  ]);
-  for (let i = 0; i < argv.length; i += 1) {
-    if (valueFlags.has(argv[i])) {
-      i += 1;
-      continue;
-    }
-    if (!String(argv[i]).startsWith("--")) return i;
-  }
-  return -1;
-}
-
-function firstPositionalArg(argv) {
-  const index = firstPositionalIndex(argv);
-  return index === -1 ? undefined : argv[index];
-}
-
-function splitSelectorArg(argv, command) {
-  const index = firstPositionalIndex(argv);
-  if (index === -1) throw new Error(`${command} requires a chat number, ChatGPT conversation id, or Second Braincell job id.`);
-  return {
-    selector: argv[index],
-    rest: [...argv.slice(0, index), ...argv.slice(index + 1)],
-  };
 }
 
 async function runResume(argv) {

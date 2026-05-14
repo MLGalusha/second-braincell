@@ -46,6 +46,7 @@
     "jobs": "node src/cli.js jobs",
     "security-check": "node scripts/security-check.js",
     "test": "node --check bin/sbc.js && node --check src/cli.js && node --check src/chatgpt-api.js && node --check src/curl.js && node --check src/jobs.js && node --check src/model-presets.js && node --check src/util.js && node --check src/config.js && node --check src/local-config.js && node --check src/request-builders.js && for f in scripts/*.js; do node --check \"$f\" || exit 1; done"
+    "test": "node --check bin/sbc.js && node --check src/cli.js && node --check src/async-jobs.js && node --check src/cli-formatters.js && node --check src/chatgpt-api.js && node --check src/jobs.js && node --check src/model-presets.js && node --check src/util.js && node --check src/config.js && node --check src/local-config.js && node --check src/request-builders.js && for f in scripts/*.js; do node --check \"$f\" || exit 1; done"
   },
   "keywords": [],
   "author": "",

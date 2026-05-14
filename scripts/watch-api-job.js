@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { updateApiJobStatus } from "../src/cli.js";
+import { updateApiJobStatus } from "../src/async-jobs.js";
 import { loadJob } from "../src/jobs.js";
 import { getFlag, hasFlag, writeJson } from "../src/util.js";
 

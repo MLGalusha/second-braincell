@@ -419,4 +419,17 @@ Second Braincell is released under the ISC License. This license applies to the 
 
 ```bash
 npm test
+npm run security-check
 ```
+
+`npm test` runs syntax checks for the CLI, source modules, and scripts, then runs the Node built-in test suite under `test/`.
+
+The test suite covers the local pieces that are most likely to break as ChatGPT web shapes change:
+
+- copied cURL parsing and local setup validation
+- request body builders for messages, images, Deep Research, and attachments
+- event-stream and upload-process parsing
+- async job state transitions
+- model preset and CLI argument normalization
+
+`npm run security-check` scans tracked files for committed ChatGPT auth material such as cURLs, cookies, HARs, `.local/`, and generated `output/` artifacts.

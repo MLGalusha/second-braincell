@@ -31,7 +31,7 @@ That shape gives it a different set of tradeoffs:
 - **ChatGPT-native files:** PDFs and files use ChatGPT's upload and processing flow instead of only pasting file text into a prompt.
 - **Agent-friendly output:** jobs, chat exports, images, reports, and status files are written locally under ignored `output/` paths.
 - **Simple connection:** one authenticated ChatGPT Project cURL provides the local configuration; `connect` extracts both auth headers and the Project ID.
-- **Easy reconnect:** if the ChatGPT web session expires, jobs fail with `needs_connect` and tell the agent to run `npm run connect` again.
+- **Easy reconnect:** if the ChatGPT web session expires, jobs fail with `needs_connect` and tell the agent to run `npm run connect -- --force`.
 
 Second Braincell is intentionally smaller than a general model router. It does not try to support every model provider, fan out to multiple APIs, or become a replacement for dedicated prompt-bundling tools. It focuses on one job: give Codex a practical local path into your ChatGPT Project.
 
@@ -51,7 +51,7 @@ Those are stored in ignored files:
 
 The copied cURL is not used as a request template. It only provides auth headers. The source code in this repo builds the actual request bodies for messages, images, Deep Research, and file attachments.
 
-If the copied ChatGPT session expires later, reconnecting is the same flow: run `npm run connect`, copy a fresh Project `conversation` cURL, and continue using the same configured Project.
+If the copied ChatGPT session expires later, reconnecting is the same flow with an explicit overwrite: run `npm run connect -- --force`, copy a fresh Project `conversation` cURL, and continue using the same configured Project.
 
 ## Security Model
 
@@ -89,7 +89,9 @@ npm run install-global
 npm run doctor
 ```
 
-`npm run connect` is interactive and clipboard-based. It walks you through:
+`npm run connect` is interactive and clipboard-based. If you are already connected, it reports the current Project and exits without overwriting local auth. To reconnect with a fresh copied cURL, run `npm run connect -- --force`.
+
+When connection is needed, it walks you through:
 
 - creating a ChatGPT Project named `Codex`
 - setting Project memory to project-only before the Project is created
@@ -100,7 +102,7 @@ No need to paste the copied cURL into the terminal. Connect reads from your clip
 
 On Linux, if no clipboard helper is available, connect can offer to install one before falling back to `--curl-file`, `--curl`, or stdin.
 
-If ChatGPT signs you out or the copied session expires, commands fail with a `needs_connect` job status and tell you to run `npm run connect` again. Reconnecting refreshes `.local/auth.json` while keeping the configured Project ID in `.local/config.json`.
+If ChatGPT signs you out or the copied session expires, commands fail with a `needs_connect` job status and tell you to run `npm run connect -- --force`. Reconnecting refreshes `.local/auth.json` while keeping the configured Project ID in `.local/config.json`.
 
 Check readiness:
 

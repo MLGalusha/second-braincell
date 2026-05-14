@@ -5,17 +5,25 @@ import { stdin as input, stdout as output } from "node:process";
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { asyncJobHeartbeatLabel, heartbeatAutomationForAsyncJob, updateApiJobStatus } from "./async-jobs.js";
+import {
+  formatChatList,
+  formatConversationSummary,
+  formatDate,
+  formatHumanCapabilities,
+  formatJobList,
+  formatSearchResults,
+  sanitizeChatSummary,
+  sanitizeSearchResult,
+} from "./cli-formatters.js";
 import { createJob, listJobs, loadJob, saveJob, updateJob } from "./jobs.js";
-import { IMAGES_DIR, JOBS_DIR, OUTPUT_DIR, ROOT_DIR } from "./config.js";
+import { JOBS_DIR, OUTPUT_DIR } from "./config.js";
 import { displayPath, ensureDir, getFlag, getFlags, hasFlag, readJson, readTextArg, slugify, uniquePath, writeJson } from "./util.js";
 import { BEST_MODEL_ORDER, DEFAULT_TEXT_MODEL, capabilities, modelKey, normalizeModelName, resolveModelPreset } from "./model-presets.js";
 import {
   authRefreshMessage,
-  downloadGeneratedImage,
-  deepResearchReportFromConversation,
   fetchConversation,
   fetchProjectResource,
-  findImageAssetPointers,
   latestAssistantTextFromConversation,
   listAllConversations,
   listConversationsForProject,
@@ -31,20 +39,6 @@ import { loadLocalHeaders, readCurlInputFile, writeLocalSetup } from "./local-co
 
 const __filename = fileURLToPath(import.meta.url);
 const SETUP_FILTER = "conversation";
-const ASYNC_HEARTBEAT_AUTOMATION = {
-  image: {
-    label: "1-minute",
-    intervalSeconds: 60,
-    rrule: "FREQ=MINUTELY;INTERVAL=1",
-    name: "Check ChatGPT image job",
-  },
-  "deep-research": {
-    label: "10-minute",
-    intervalSeconds: 600,
-    rrule: "FREQ=MINUTELY;INTERVAL=10",
-    name: "Check ChatGPT Deep Research job",
-  },
-};
 
 function color(code, value) {
   if (!process.stdout.isTTY || process.env.NO_COLOR) return value;
@@ -124,189 +118,6 @@ Options:
   --watch-interval-seconds N
   --watch-timeout-seconds N
 `.trim();
-}
-
-function checkmark(value) {
-  return value ? color("32", "✓") : color("31", "✗");
-}
-
-function featureLine(label, ready) {
-  return `  ${checkmark(ready)} ${label}`;
-}
-
-function formatHumanCapabilities(data) {
-  const lines = [];
-  const setup = data.setup;
-  const projectName = setup.config.projectId || "configured project";
-
-  lines.push(color("1;36", "Second Braincell"));
-  lines.push("");
-  lines.push(`Status: ${setup.ready ? color("32", "ready") : color("31", "connection incomplete")}`);
-  if (setup.config.ready) {
-    lines.push(`Project: ${projectName || "configured"}`);
-    lines.push(`Project ID: ${setup.config.projectId}`);
-  }
-  lines.push("");
-
-  if (!setup.ready) {
-    lines.push("Missing:");
-    if (!setup.auth.ready) lines.push(featureLine(".local/auth.json", false));
-    if (!setup.config.ready) lines.push(featureLine(".local/config.json", false));
-    for (const hint of setup.hints || []) lines.push(`  - ${hint}`);
-    lines.push("");
-    lines.push("Next step:");
-    lines.push("  npm run connect");
-    lines.push("");
-  }
-
-  lines.push("Capabilities:");
-  lines.push(featureLine("Text conversations", data.readiness.message));
-  lines.push(featureLine("File and PDF questions", data.readiness.attachments));
-  lines.push(featureLine("Image generation: high", data.readiness.imageHigh));
-  lines.push(featureLine("Image generation: instant", data.readiness.imageInstant));
-  lines.push(featureLine("Deep Research", data.readiness.deepResearch));
-  lines.push("");
-
-  lines.push("Default commands:");
-  lines.push('  npm run converse -- --prompt "Have a conversation with ChatGPT about this decision."');
-  lines.push("  npm run chats");
-  lines.push('  npm run search-chats -- "observability roadmap"');
-  lines.push("  npm run chatgpt -- project-instructions");
-  lines.push("  npm run resume -- 1");
-  lines.push("  npm run transcript -- 1");
-  lines.push('  npm run ask -- --attach-file ./document.pdf --prompt "Answer questions about this file."');
-  lines.push('  npm run ask -- --kind image --prompt "A red cube on a white table."');
-  lines.push('  npm run ask -- --kind deep-research --prompt "Research this topic."');
-  lines.push("");
-  lines.push("Detailed JSON:");
-  lines.push("  npm run capabilities -- --detailed");
-
-  return lines.join("\n");
-}
-
-function formatDate(value) {
-  if (!value) return "unknown";
-  const normalized = typeof value === "number" && value > 0 && value < 1000000000000 ? value * 1000 : value;
-  const date = new Date(normalized);
-  if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-function truncate(value, length = 72) {
-  const text = String(value || "").replace(/\s+/g, " ").trim();
-  if (text.length <= length) return text;
-  return `${text.slice(0, Math.max(0, length - 1)).trimEnd()}…`;
-}
-
-function conversationTitle(chat) {
-  return chat?.title || chat?.snippet || "Untitled chat";
-}
-
-function sanitizeChatSummary(chat) {
-  return {
-    id: chat.id,
-    title: chat.title || null,
-    create_time: chat.create_time || null,
-    update_time: chat.update_time || null,
-    is_archived: Boolean(chat.is_archived),
-    is_temporary_chat: Boolean(chat.is_temporary_chat),
-    memory_scope: chat.memory_scope || null,
-    async_status: chat.async_status || null,
-    snippet: chat.snippet || null,
-  };
-}
-
-function sanitizeSearchResult(result) {
-  return {
-    conversation_id: result.conversation_id,
-    title: result.title || null,
-    update_time: result.update_time || null,
-    is_archived: Boolean(result.is_archived),
-    snippet: result.payload?.snippet || null,
-    message_id: result.payload?.message_id || null,
-  };
-}
-
-function scopeLabel(argv) {
-  if (hasFlag(argv, "--all")) return "All ChatGPT Chats";
-  const project = scopeProjectId(argv);
-  if (project) return `ChatGPT Project Chats: ${project}`;
-  return "ChatGPT Project Chats";
-}
-
-function scopeFlagText(argv) {
-  if (hasFlag(argv, "--all")) return " --all";
-  const project = scopeProjectId(argv);
-  return project ? ` --project ${JSON.stringify(project)}` : "";
-}
-
-function formatChatList(chats, argv = []) {
-  const lines = [color("1;36", `Recent ${scopeLabel(argv)}`), ""];
-  if (!chats.length) {
-    lines.push("No chats found.");
-    return lines.join("\n");
-  }
-  for (const [index, chat] of chats.entries()) {
-    lines.push(`${index + 1}. ${conversationTitle(chat)}`);
-    lines.push(`   id: ${chat.id}`);
-    lines.push(`   updated: ${formatDate(chat.update_time || chat.create_time)}`);
-    if (chat.snippet) lines.push(`   snippet: ${truncate(chat.snippet, 96)}`);
-    lines.push("");
-  }
-  lines.push("Resume:");
-  lines.push(`  npm run resume --${scopeFlagText(argv)} 1`);
-  lines.push("  npm run resume -- <conversation-id>");
-  return lines.join("\n").trimEnd();
-}
-
-function formatSearchResults(results, query, argv = []) {
-  const lines = [color("1;36", "ChatGPT Chat Search"), ""];
-  lines.push(`Query: ${query}`);
-  lines.push(`Scope: ${scopeLabel(argv)}`);
-  lines.push("");
-  if (!results.length) {
-    lines.push("No matching chats found.");
-    return lines.join("\n");
-  }
-  for (const [index, result] of results.entries()) {
-    const item = sanitizeSearchResult(result);
-    lines.push(`${index + 1}. ${item.title || "Untitled chat"}`);
-    lines.push(`   id: ${item.conversation_id}`);
-    lines.push(`   updated: ${formatDate(item.update_time ? item.update_time * 1000 : null)}`);
-    if (item.snippet) lines.push(`   match: ${truncate(item.snippet, 120)}`);
-    lines.push("");
-  }
-  lines.push("Resume:");
-  lines.push(`  npm run resume --${scopeFlagText(argv)} --search ${JSON.stringify(query)}`);
-  lines.push("Export:");
-  lines.push(`  npm run transcript --${scopeFlagText(argv)} --search ${JSON.stringify(query)}`);
-  return lines.join("\n").trimEnd();
-}
-
-function formatJobList(jobs) {
-  const lines = [color("1;36", "Second Braincell Jobs"), ""];
-  if (!jobs.length) {
-    lines.push("No jobs found.");
-    return lines.join("\n");
-  }
-  for (const [index, job] of jobs.entries()) {
-    lines.push(`${index + 1}. ${job.id}`);
-    lines.push(`   kind: ${job.kind}`);
-    lines.push(`   status: ${job.status}`);
-    lines.push(`   created: ${formatDate(job.createdAt)}`);
-    if (job.conversationId) lines.push(`   conversation: ${job.conversationId}`);
-    if (job.responseLength) lines.push(`   response: ${job.responseLength} chars`);
-    lines.push("");
-  }
-  lines.push("JSON:");
-  lines.push("  npm run chatgpt -- jobs --json");
-  return lines.join("\n").trimEnd();
 }
 
 async function promptSetupValue(question) {
@@ -590,7 +401,7 @@ async function runDirectApiMessage(argv, { silent = false } = {}) {
       statusCommand: `npm run chatgpt -- status ${job.id}`,
       watchStatusPath: resolve(JOBS_DIR, job.id, "watch-status.json"),
       agentInstruction: isAsync
-        ? `Async ${kind} job submitted and background watcher started. Create a thread heartbeat automation with a ${ASYNC_HEARTBEAT_AUTOMATION[kind]?.label || "10-minute"} interval to report completion when available, then do not poll or wait unless explicitly asked.`
+        ? `Async ${kind} job submitted and background watcher started. Create a thread heartbeat automation with a ${asyncJobHeartbeatLabel(kind)} interval to report completion when available, then do not poll or wait unless explicitly asked.`
         : undefined,
       heartbeatAutomation,
     };
@@ -620,19 +431,6 @@ function withoutFlags(argv, names) {
     if (i + 1 < argv.length && !String(argv[i + 1]).startsWith("--")) i += 1;
   }
   return next;
-}
-
-export function heartbeatAutomationForAsyncJob(jobId, kind) {
-  const schedule = ASYNC_HEARTBEAT_AUTOMATION[kind] || ASYNC_HEARTBEAT_AUTOMATION["deep-research"];
-  return {
-    requiredWhenAvailable: true,
-    kind: "heartbeat",
-    destination: "thread",
-    intervalSeconds: schedule.intervalSeconds,
-    rrule: schedule.rrule,
-    name: schedule.name,
-    prompt: `In ${ROOT_DIR}, check Second Braincell job ${jobId} with npm run status -- ${jobId}. If it is complete, report the artifact path and render the image/report when possible. If it is still waiting, check again later without extra commentary.`,
-  };
 }
 
 function ensureFlag(argv, name, value = null) {
@@ -1031,31 +829,6 @@ function conversationSummary(history, conversationId, { maxMessages = 8, maxChar
       text: truncateMiddle(messageText(message), maxChars),
     })),
   };
-}
-
-function formatConversationSummary(summary) {
-  const lines = [color("1;36", summary.title || "Untitled Chat"), ""];
-  lines.push(`Conversation ID: ${summary.conversationId}`);
-  lines.push(`Messages: ${summary.messageCount}`);
-  if (summary.updateTime) lines.push(`Updated: ${formatDate(summary.updateTime)}`);
-  if (summary.firstUserMessage) {
-    lines.push("");
-    lines.push(color("1", "Started With"));
-    lines.push(summary.firstUserMessage);
-  }
-  if (summary.latestAssistantMessage) {
-    lines.push("");
-    lines.push(color("1", "Latest ChatGPT Response"));
-    lines.push(summary.latestAssistantMessage);
-  }
-  if (summary.recentMessages.length) {
-    lines.push("");
-    lines.push(color("1", "Recent Messages"));
-    for (const message of summary.recentMessages) {
-      lines.push(`- ${message.role}: ${message.text}`);
-    }
-  }
-  return lines.join("\n");
 }
 
 function projectInstructionsBackupPath(projectId) {
@@ -1457,61 +1230,6 @@ function startApiWatcher(jobId, { notify = false, intervalSeconds, timeoutSecond
     stdio: "ignore",
   });
   child.unref();
-}
-
-export async function updateApiJobStatus(job) {
-  if (!job.conversationId) return updateJob(job, { status: "needs_user", warning: "No conversation id captured for API job." });
-  const headers = job.options?.curlPath ? loadCurlTemplate(job.options.curlPath).headers : loadLocalHeaders();
-  const history = await fetchConversation(headers, job.conversationId);
-  const responsePath = resolve(JOBS_DIR, job.id, "response.md");
-
-  if (job.options?.outputKind === "image" || job.kind === "api-image") {
-    const pointers = findImageAssetPointers(history);
-    if (!pointers.length) {
-      return updateJob(job, { status: "waiting", asyncStatus: history.async_status || null, message: "No image asset pointer yet." });
-    }
-    ensureDir(IMAGES_DIR);
-    const imagePath = uniquePath(IMAGES_DIR, job.id, ".png");
-    const downloaded = await downloadGeneratedImage({ headers, assetPointer: pointers.at(-1).asset_pointer, outPath: imagePath });
-    job.artifacts.image = imagePath;
-    job.artifacts.imageContentType = downloaded.contentType;
-    job.artifacts.chatTitle = history.title;
-    return updateJob(job, { status: "completed", asyncStatus: history.async_status || null, message: undefined });
-  }
-
-  if (job.kind === "api-deep-research") {
-    const report = deepResearchReportFromConversation(history);
-    if (!report.text) {
-      delete job.artifacts.responseMarkdown;
-      return updateJob(job, {
-        status: report.status === "failed" ? "failed" : "waiting",
-        asyncStatus: history.async_status || null,
-        deepResearchStatus: report.status || null,
-        message: report.status ? `Deep Research status: ${report.status}; no report text yet.` : "No Deep Research report text yet.",
-      });
-    }
-    writeFileSync(responsePath, `${report.text}\n`);
-    job.artifacts.responseMarkdown = responsePath;
-    job.artifacts.chatTitle = history.title;
-    if (report.reportMessageId) job.artifacts.reportMessageId = report.reportMessageId;
-    return updateJob(job, {
-      status: "completed",
-      responseLength: report.text.length,
-      asyncStatus: history.async_status || null,
-      deepResearchStatus: report.status || null,
-      message: undefined,
-    });
-  }
-
-  const text = latestAssistantTextFromConversation(history);
-  if (!text) {
-    delete job.artifacts.responseMarkdown;
-    return updateJob(job, { status: "waiting", asyncStatus: history.async_status || null, message: "No assistant text yet." });
-  }
-  writeFileSync(responsePath, `${text}\n`);
-  job.artifacts.responseMarkdown = responsePath;
-  job.artifacts.chatTitle = history.title;
-  return updateJob(job, { status: "completed", responseLength: text.length, asyncStatus: history.async_status || null, message: undefined });
 }
 
 async function main() {
